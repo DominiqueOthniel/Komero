@@ -1,11 +1,16 @@
 [build]
   command = "npm run build"
-  # Leave publish unset so Netlify OpenNext serves the Next.js app correctly.
+  # Required for Netlify OpenNext / Next.js Runtime (do not use out/ or publish static HTML)
+  publish = ".next"
 
 [build.environment]
   NODE_VERSION = "22"
   NEXT_TELEMETRY_DISABLED = "1"
   NETLIFY_NEXT_SKEW_PROTECTION = "true"
+
+# Pin the Next.js Runtime so Netlify does not treat the site as a static export of out/
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
 
 [[redirects]]
   from = "/"

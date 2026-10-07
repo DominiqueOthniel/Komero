@@ -73,7 +73,7 @@ Set `NEXT_PUBLIC_API_URL` to your FastAPI base (`http://localhost:8000/api/v1`).
 
 ## Deployment
 
-- Frontend: Netlify/Vercel (Next.js App Router). Netlify OpenNext should auto-detect when `publish` is not forced to a static folder.
+- Frontend: Netlify (Next.js App Router via `@netlify/plugin-nextjs`). `netlify.toml` sets `publish = ".next"`. In the Netlify UI, clear any old Publish directory override such as `out` (that causes the classic Netlify 404 for `/login`, `/shop/...`, `/dashboard`).
 - Backend: Render/Koyeb with `uvicorn app.main:app`
 - Database: Supabase/Neon PostgreSQL via `DATABASE_URL`
 
