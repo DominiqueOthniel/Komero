@@ -7,6 +7,10 @@
   NODE_VERSION = "22"
   NEXT_TELEMETRY_DISABLED = "1"
   NETLIFY_NEXT_SKEW_PROTECTION = "true"
+  # Temporary Cloudflare tunnel to the agent API. Replace with Render URL when live
+  # (example: https://komero-api.onrender.com/api/v1).
+  NEXT_PUBLIC_API_URL = "https://wiki-passes-foods-salaries.trycloudflare.com/api/v1"
+  NEXT_PUBLIC_WHATSAPP_URL = "https://wa.me/?text=Hello%20Komero%2C%20I%20want%20to%20create%20my%20shop"
 
 # Pin the Next.js Runtime so Netlify does not treat the site as a static export of out/
 [[plugins]]
