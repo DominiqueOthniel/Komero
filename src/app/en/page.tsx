@@ -9,8 +9,8 @@ export const metadata: Metadata = {
   description: dict.meta.description,
   alternates: {
     languages: {
-      en: "/en/",
-      fr: "/fr/",
+      en: "/en",
+      fr: "/fr",
     },
   },
 };
