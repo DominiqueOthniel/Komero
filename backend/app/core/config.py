@@ -16,8 +16,10 @@ class Settings(BaseSettings):
     secret_key: str = "dev-secret-change-me"
     access_token_expire_minutes: int = 60
     database_url: str = "postgresql+psycopg://komero:komero@localhost:5432/komero"
-    cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
-    frontend_url: str = "http://localhost:3000"
+    cors_origins: str = (
+        "http://localhost:3000,http://127.0.0.1:3000,https://komero.netlify.app"
+    )
+    frontend_url: str = "https://komero.netlify.app"
     currency_default: str = "XAF"
     token_encryption_key: str = "dev-token-encryption-key-change-me"
 
@@ -36,6 +38,16 @@ class Settings(BaseSettings):
     @property
     def cors_origin_list(self) -> list[str]:
         return [item.strip() for item in self.cors_origins.split(",") if item.strip()]
+
+    @property
+    def sqlalchemy_database_url(self) -> str:
+        """Normalize provider URLs to the psycopg v3 SQLAlchemy dialect."""
+        url = self.database_url
+        if url.startswith("postgres://"):
+            return "postgresql+psycopg://" + url[len("postgres://") :]
+        if url.startswith("postgresql://") and "+psycopg" not in url:
+            return "postgresql+psycopg://" + url[len("postgresql://") :]
+        return url
 
 
 @lru_cache
