@@ -28,7 +28,7 @@ class UserOut(BaseModel):
 
     id: uuid.UUID
     name: str
-    email: EmailStr
+    email: str
     phone: str | None
     role: UserRole
     created_at: datetime

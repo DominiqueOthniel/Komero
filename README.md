@@ -50,7 +50,7 @@ API docs: [http://localhost:8000/docs](http://localhost:8000/docs)
 
 Seed login:
 
-- Email: `merchant@komero.test`
+- Email: `merchant@komero.cm`
 - Password: `password123`
 - Demo shop: `/shop/chez-awa`
 

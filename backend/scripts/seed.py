@@ -14,7 +14,7 @@ from sqlalchemy import select
 def seed() -> None:
     db = SessionLocal()
     try:
-        email = "merchant@komero.test"
+        email = "merchant@komero.cm"
         user = db.scalar(select(User).where(User.email == email))
         if not user:
             user = User(
