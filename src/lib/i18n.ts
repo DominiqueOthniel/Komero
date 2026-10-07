@@ -61,7 +61,7 @@ export type Dictionary = {
 
 const en: Dictionary = {
   meta: {
-    title: "Komero — Your shop lives on WhatsApp",
+    title: "Komero: Your shop lives on WhatsApp",
     description:
       "Add products by photo or voice note, share one link, and get clean orders on WhatsApp. Free trial, no card, no cut of your sales.",
   },
@@ -116,7 +116,7 @@ const en: Dictionary = {
       { who: "you", text: "Wax dress 12000, 3 pieces, sizes 40 to 44" },
       {
         who: "bot",
-        text: "Wax dress · 12,000 F · sizes 40–44 · 3 in stock. Publish?",
+        text: "Wax dress · 12,000 F · sizes 40 to 44 · 3 in stock. Publish?",
       },
       { who: "you", text: "Confirm" },
       { who: "bot", text: "Online. Share: chez-awa.komero.app/p/7K2WAX4R" },
@@ -125,7 +125,7 @@ const en: Dictionary = {
   shop: {
     title: "What your customers actually see",
     support:
-      "Photos, prices, sizes, and stock — without asking you a hundred times a day.",
+      "Photos, prices, sizes, and stock, without asking you a hundred times a day.",
     storeName: "Chez Awa",
     replies: "Orders open on WhatsApp",
     order: "Order on WhatsApp",
@@ -181,19 +181,19 @@ const en: Dictionary = {
   },
   close: {
     title: "Next time someone asks the price, send the link.",
-    support: "Start on WhatsApp in under a minute. Keep selling the way you already do — with a shop that works while you sleep.",
+    support: "Start on WhatsApp in under a minute. Keep selling the way you already do, with a shop that works while you sleep.",
     cta: "Start free on WhatsApp",
     note: "14-day trial · cancel anytime · you keep 100% of sales",
   },
   footer: {
     rights: "Komero. Built for sellers who live on WhatsApp.",
-    tagline: "Catalogue, orders, stock — from your chat.",
+    tagline: "Catalogue, orders, stock, from your chat.",
   },
 };
 
 const fr: Dictionary = {
   meta: {
-    title: "Komero — Votre boutique vit sur WhatsApp",
+    title: "Komero: Votre boutique vit sur WhatsApp",
     description:
       "Ajoutez vos produits par photo ou message vocal, partagez un lien, recevez des commandes claires sur WhatsApp. Essai gratuit, sans carte, sans commission.",
   },
@@ -249,7 +249,7 @@ const fr: Dictionary = {
       { who: "you", text: "Robe wax 12000, 3 pièces, tailles 40 à 44" },
       {
         who: "bot",
-        text: "Robe wax · 12 000 F · tailles 40–44 · 3 en stock. Je publie ?",
+        text: "Robe wax · 12 000 F · tailles 40 à 44 · 3 en stock. Je publie ?",
       },
       { who: "you", text: "Confirmer" },
       { who: "bot", text: "En ligne. Lien : chez-awa.komero.app/p/7K2WAX4R" },
@@ -258,7 +258,7 @@ const fr: Dictionary = {
   shop: {
     title: "Ce que vos clients voient vraiment",
     support:
-      "Photos, prix, tailles et stock — sans vous écrire cent fois par jour.",
+      "Photos, prix, tailles et stock, sans vous écrire cent fois par jour.",
     storeName: "Chez Awa",
     replies: "Commandes sur WhatsApp",
     order: "Commander sur WhatsApp",
@@ -315,13 +315,13 @@ const fr: Dictionary = {
   close: {
     title: "La prochaine fois qu’on demande le prix, envoyez le lien.",
     support:
-      "Démarrez sur WhatsApp en moins d’une minute. Continuez à vendre comme aujourd’hui — avec une boutique qui travaille pendant que vous dormez.",
+      "Démarrez sur WhatsApp en moins d’une minute. Continuez à vendre comme aujourd’hui, avec une boutique qui travaille pendant que vous dormez.",
     cta: "Commencer gratuitement sur WhatsApp",
     note: "Essai 14 jours · résiliez quand vous voulez · 100 % de vos ventes pour vous",
   },
   footer: {
     rights: "Komero. Pour les vendeurs qui vivent sur WhatsApp.",
-    tagline: "Catalogue, commandes, stock — depuis votre chat.",
+    tagline: "Catalogue, commandes, stock, depuis votre chat.",
   },
 };
 
