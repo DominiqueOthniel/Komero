@@ -16,12 +16,10 @@ Set `NEXT_PUBLIC_WHATSAPP_URL` to your WhatsApp deep link for the primary CTA.
 ## Deploy on Netlify
 
 1. Connect this GitHub repo in the Netlify dashboard.
-2. Build settings come from `netlify.toml` (`npm run build`, Node 22).
+2. Build settings come from `netlify.toml`: `npm run build`, publish `out`, Node 22.
 3. Add site env `NEXT_PUBLIC_WHATSAPP_URL` with your WhatsApp deep link.
-4. Deploy. Netlify’s OpenNext adapter handles App Router, caching, and `next/image` via the Image CDN.
-
-Skew protection is enabled via `NETLIFY_NEXT_SKEW_PROTECTION` in `netlify.toml`.
+4. Deploy. The site is a static export (`output: "export"`), so Netlify serves HTML from `out/`.
 
 ## Stack
 
-Next.js App Router, Tailwind CSS v4, Google fonts (Bricolage Grotesque + Manrope), Netlify OpenNext.
+Next.js App Router (static export), Tailwind CSS v4, Google fonts (Bricolage Grotesque + Manrope), Netlify.

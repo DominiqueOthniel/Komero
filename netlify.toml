@@ -1,19 +1,14 @@
 [build]
   command = "npm run build"
-  publish = ".next"
+  publish = "out"
 
 [build.environment]
   NODE_VERSION = "22"
   NEXT_TELEMETRY_DISABLED = "1"
-  # Keep deploys smooth when visitors are mid-session
-  NETLIFY_NEXT_SKEW_PROTECTION = "true"
-
-# Netlify auto-wires the OpenNext adapter for Next.js.
-# Do not pin @netlify/plugin-nextjs unless you need a fixed adapter version.
 
 [[redirects]]
   from = "/"
-  to = "/en"
+  to = "/en/"
   status = 302
   force = true
 

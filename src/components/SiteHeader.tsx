@@ -13,7 +13,7 @@ export function SiteHeader({ locale, dict }: Props) {
     <header className="sticky top-0 z-40 border-b border-line bg-foam/85 backdrop-blur-md">
       <div className="mx-auto flex h-16 max-w-6xl items-center gap-4 px-4 sm:px-6">
         <Link
-          href={`/${locale}`}
+          href={`/${locale}/`}
           className="font-display text-[1.35rem] font-bold tracking-tight text-ink no-underline"
           aria-label={`${siteConfig.name}, home`}
         >
@@ -48,7 +48,7 @@ export function SiteHeader({ locale, dict }: Props) {
                   </span>
                 ) : (
                   <Link
-                    href="/fr"
+                    href="/fr/"
                     hrefLang="fr"
                     lang="fr"
                     className="inline-flex min-h-10 min-w-10 items-center justify-center text-ink-soft no-underline hover:text-ink"
@@ -68,7 +68,7 @@ export function SiteHeader({ locale, dict }: Props) {
                   </span>
                 ) : (
                   <Link
-                    href="/en"
+                    href="/en/"
                     hrefLang="en"
                     lang="en"
                     className="inline-flex min-h-10 min-w-10 items-center justify-center text-ink-soft no-underline hover:text-ink"
