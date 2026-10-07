@@ -1,18 +1,21 @@
+# One-click: https://render.com/deploy?repo=https://github.com/DominiqueOthniel/Komero
 databases:
   - name: komero-db
     plan: free
     databaseName: komero
     user: komero
+    postgresMajorVersion: "16"
 
 services:
   - type: web
     name: komero-api
     runtime: docker
     plan: free
+    region: oregon
     rootDir: backend
     dockerfilePath: ./Dockerfile
     healthCheckPath: /health
-    autoDeploy: true
+    autoDeployTrigger: commit
     envVars:
       - key: APP_ENV
         value: production
