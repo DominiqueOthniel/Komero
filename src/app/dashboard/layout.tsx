@@ -8,6 +8,7 @@ import { apiFetch, setToken } from "@/lib/api";
 const links = [
   { href: "/dashboard", label: "Dashboard" },
   { href: "/dashboard/products", label: "Products" },
+  { href: "/dashboard/sales", label: "Sales" },
   { href: "/dashboard/orders", label: "Orders" },
   { href: "/dashboard/customers", label: "Customers" },
   { href: "/dashboard/conversations", label: "Conversations" },

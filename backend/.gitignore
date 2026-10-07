@@ -5,3 +5,6 @@ __pycache__/
 .pytest_cache/
 *.egg-info/
 .mypy_cache/
+storage/receipts/*.pdf
+storage/receipts/*.png
+!storage/receipts/.gitkeep

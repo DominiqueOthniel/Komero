@@ -128,6 +128,54 @@ export type DashboardStats = {
   pending_orders: number;
 };
 
+export type Sale = {
+  id: string;
+  store_id: string;
+  public_code: string;
+  currency: string;
+  total_amount: string;
+  item_count: number;
+  customer_name: string | null;
+  status: string;
+  created_at: string;
+  items: {
+    id: string;
+    name: string;
+    quantity: number;
+    unit_price: string;
+    total_price: string;
+    product_id: string | null;
+  }[];
+  receipt: {
+    id: string;
+    number: string;
+    customer_name: string | null;
+    created_at: string;
+    verification_url: string | null;
+  } | null;
+};
+
+export type PublicReceipt = {
+  number: string;
+  store_name: string;
+  store_phone: string | null;
+  sale_code: string;
+  customer_name: string | null;
+  currency: string;
+  total_amount: string;
+  created_at: string;
+  sale_date: string;
+  items: {
+    id: string;
+    name: string;
+    quantity: number;
+    unit_price: string;
+    total_price: string;
+    product_id: string | null;
+  }[];
+  verification_url: string;
+};
+
 export function formatXaf(amount: string | number) {
   const value = typeof amount === "string" ? Number(amount) : amount;
   return new Intl.NumberFormat("fr-CM", {
@@ -135,4 +183,9 @@ export function formatXaf(amount: string | number) {
     currency: "XAF",
     maximumFractionDigits: 0,
   }).format(value || 0);
+}
+
+export function formatXafShort(amount: string | number) {
+  const value = typeof amount === "string" ? Number(amount) : amount;
+  return `${new Intl.NumberFormat("fr-CM", { maximumFractionDigits: 0 }).format(value || 0)} F`;
 }

@@ -1,13 +1,19 @@
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+from sqlalchemy.orm import Session
 
 from app.ai.factory import get_ai_provider
 from app.core.config import get_settings
-from app.core.deps import get_current_user
+from app.core.database import get_db
+from app.core.deps import get_current_user, get_owned_store
+from app.models.store import Store
 from app.models.user import User
+from app.services.conversation_engine import handle_incoming_message
+from app.services.whatsapp_webhook import process_webhook_payload
 from app.whatsapp.factory import get_whatsapp_adapter
+from app.whatsapp.mock import MockWhatsAppAdapter
 
 router = APIRouter(prefix="/whatsapp", tags=["whatsapp"])
 
@@ -25,14 +31,14 @@ def verify_webhook(
 
 
 @router.post("/webhook")
-async def receive_webhook(request: Request) -> dict[str, str]:
-    """Receive Meta WhatsApp webhooks.
-
-    Phase 2 will route payloads into the conversation engine.
-    For now we acknowledge and log structure only.
-    """
-    _payload = await request.json()
-    return {"status": "received"}
+async def receive_webhook(
+    request: Request,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    payload = await request.json()
+    adapter = get_whatsapp_adapter()
+    result = process_webhook_payload(db, adapter, payload)
+    return {"status": "received", **result}
 
 
 class ExtractProductRequest(BaseModel):
@@ -40,12 +46,17 @@ class ExtractProductRequest(BaseModel):
     language: str = "fr"
 
 
+class SimulateMessageRequest(BaseModel):
+    from_number: str = Field(min_length=8, max_length=40)
+    text: str = ""
+    button_id: str | None = None
+
+
 @router.post("/ai/extract-product")
 def extract_product_preview(
     payload: ExtractProductRequest,
     _: User = Depends(get_current_user),
 ) -> dict[str, Any]:
-    """Dev helper to preview AI product extraction without WhatsApp."""
     provider = get_ai_provider()
     return provider.extract_product(payload.text, language=payload.language)
 
@@ -58,3 +69,26 @@ def adapter_status(_: User = Depends(get_current_user)) -> dict[str, str]:
         "configured_adapter": settings.whatsapp_adapter,
         "runtime_adapter": adapter.__class__.__name__,
     }
+
+
+@router.post("/stores/{store_id}/simulate")
+def simulate_inbound(
+    payload: SimulateMessageRequest,
+    store: Store = Depends(get_owned_store),
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+) -> dict[str, Any]:
+    """Local/dev helper that drives the conversation engine without Meta."""
+    adapter = get_whatsapp_adapter()
+    result = handle_incoming_message(
+        db,
+        adapter,
+        store=store,
+        from_number=payload.from_number,
+        text=payload.text,
+        button_id=payload.button_id,
+    )
+    outbound = []
+    if isinstance(adapter, MockWhatsAppAdapter):
+        outbound = adapter.sent[-5:]
+    return {"result": result, "outbound": outbound}

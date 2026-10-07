@@ -84,10 +84,36 @@ Set `NEXT_PUBLIC_API_URL` to your FastAPI base (`http://localhost:8000/api/v1`).
 - Every store/product query is scoped by owner/store_id
 - AI never executes SQL; it returns structured JSON for backend services
 
+## WhatsApp sales and receipts
+
+Merchants can record a sale from WhatsApp:
+
+```text
+vente BBC 9000
+```
+
+Bot reply:
+
+```text
+Sale recorded: C-19H6.
+[Receipt C-19H6] [Add a product] [More actions]
+```
+
+Then:
+
+```text
+Receipt for sale C-19H6: 1 item, 9 000 F. In whose name?
+[No name] [Cancel]
+```
+
+Komero generates a PDF receipt (`Receipt-R-2026-0001.pdf`), sends it on WhatsApp, and publishes a verification page at `/recus/R-2026-0001?cle=...`.
+
+Local simulator: Dashboard → WhatsApp (no Meta credentials required when `WHATSAPP_ADAPTER=mock`).
+
 ## Phase roadmap
 
-1. Foundation (done in this branch): schema, auth, store/product APIs, dashboard, public shop
-2. WhatsApp conversation engine + onboarding
-3. AI product confirmation flow + images
+1. Foundation: schema, auth, store/product APIs, dashboard, public shop
+2. WhatsApp sales + PDF receipts + conversation engine (this branch)
+3. AI product confirmation flow + images + full onboarding
 4. Orders + customers + analytics
 5. Voice, Mobile Money, delivery, subscriptions
