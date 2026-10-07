@@ -73,9 +73,34 @@ Set `NEXT_PUBLIC_API_URL` to your FastAPI base (`http://localhost:8000/api/v1`).
 
 ## Deployment
 
-- Frontend: Netlify (Next.js App Router via `@netlify/plugin-nextjs`). `netlify.toml` sets `publish = ".next"`. In the Netlify UI, clear any old Publish directory override such as `out` (that causes the classic Netlify 404 for `/login`, `/shop/...`, `/dashboard`).
-- Backend: Render/Koyeb with `uvicorn app.main:app`
-- Database: Supabase/Neon PostgreSQL via `DATABASE_URL`
+### Frontend (Netlify)
+
+- Next.js App Router via `@netlify/plugin-nextjs` (`publish = ".next"`)
+- Set site env: `NEXT_PUBLIC_API_URL=https://<your-api-host>/api/v1`
+- Clear any old Publish directory override such as `out`
+
+### Backend (Render Blueprint)
+
+1. Open [Render Blueprint](https://dashboard.render.com/select-repo?type=blueprint) and select this repo
+2. `render.yaml` creates `komero-api` (Docker) + free Postgres
+3. After deploy, copy the API URL (example: `https://komero-api.onrender.com`)
+4. Set Netlify `NEXT_PUBLIC_API_URL` to `https://komero-api.onrender.com/api/v1` and redeploy
+
+Manual Docker:
+
+```bash
+cd backend
+docker build -t komero-api .
+docker run -p 8000:8000 \
+  -e DATABASE_URL=postgresql+psycopg://... \
+  -e SECRET_KEY=... \
+  -e CORS_ORIGINS=https://komero.netlify.app \
+  -e FRONTEND_URL=https://komero.netlify.app \
+  -e RUN_SEED=true \
+  komero-api
+```
+
+Health check: `GET /health`
 
 ## Security notes
 

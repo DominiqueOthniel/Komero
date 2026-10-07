@@ -1,0 +1,46 @@
+databases:
+  - name: komero-db
+    plan: free
+    databaseName: komero
+    user: komero
+
+services:
+  - type: web
+    name: komero-api
+    runtime: docker
+    plan: free
+    rootDir: backend
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: APP_NAME
+        value: Komero
+      - key: API_PREFIX
+        value: /api/v1
+      - key: CURRENCY_DEFAULT
+        value: XAF
+      - key: WHATSAPP_ADAPTER
+        value: mock
+      - key: AI_PROVIDER
+        value: mock
+      - key: STORAGE_PROVIDER
+        value: local
+      - key: RUN_SEED
+        value: "true"
+      - key: FRONTEND_URL
+        value: https://komero.netlify.app
+      - key: CORS_ORIGINS
+        value: https://komero.netlify.app,http://localhost:3000,http://127.0.0.1:3000
+      - key: DATABASE_URL
+        fromDatabase:
+          name: komero-db
+          property: connectionString
+      - key: SECRET_KEY
+        generateValue: true
+      - key: TOKEN_ENCRYPTION_KEY
+        generateValue: true
+      - key: WHATSAPP_VERIFY_TOKEN
+        value: komero-verify-token
