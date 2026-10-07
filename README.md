@@ -81,10 +81,19 @@ Set `NEXT_PUBLIC_API_URL` to your FastAPI base (`http://localhost:8000/api/v1`).
 
 ### Backend (Render Blueprint)
 
-1. Open [Render Blueprint](https://dashboard.render.com/select-repo?type=blueprint) and select this repo
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/DominiqueOthniel/Komero)
+
+1. Click **Deploy to Render** (or open [Blueprint](https://dashboard.render.com/select-repo?type=blueprint) and select this repo)
 2. `render.yaml` creates `komero-api` (Docker) + free Postgres
 3. After deploy, copy the API URL (example: `https://komero-api.onrender.com`)
-4. Set Netlify `NEXT_PUBLIC_API_URL` to `https://komero-api.onrender.com/api/v1` and redeploy
+4. Update `NEXT_PUBLIC_API_URL` in `netlify.toml` to `https://komero-api.onrender.com/api/v1` and push
+
+With an API key:
+
+```bash
+export RENDER_API_KEY=rnd_...
+python3 scripts/deploy_render.py
+```
 
 Manual Docker:
 
