@@ -1,6 +1,6 @@
 # Komero
 
-WhatsApp-first shop for sellers. This repo is the marketing site: a sharper take on the Klinbot landing experience, with stronger brand presence, less chat clutter in the first viewport, and a cooler teal–citron visual system.
+WhatsApp-first shop for sellers. This repo is the marketing site: a sharper take on the Klinbot landing experience, with stronger brand presence, less chat clutter in the first viewport, and a cooler teal and citron visual system.
 
 ## Develop
 

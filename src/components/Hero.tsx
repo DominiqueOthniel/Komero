@@ -35,19 +35,19 @@ export function Hero({ dict }: Props) {
           {dict.hero.headline}
         </h1>
 
-        <p className="animate-rise-delay-2 mt-2.5 max-w-lg text-[15px] leading-relaxed text-foam/90 sm:mt-3 sm:text-base md:text-lg">
+        <p className="animate-rise-delay-2 mt-2.5 max-w-lg text-[15px] leading-relaxed text-white/95 sm:mt-3 sm:text-base md:text-lg">
           {dict.hero.support}
         </p>
 
         <div className="animate-rise-delay-3 mt-5 flex flex-col items-start gap-2 sm:mt-8 sm:gap-3">
           <a
             href={siteConfig.whatsappUrl}
-            className="group inline-flex min-h-12 items-center gap-2.5 rounded-xl bg-citron px-5 text-[15px] font-bold text-ink no-underline transition-transform hover:-translate-y-0.5 hover:bg-citron-deep sm:min-h-14 sm:gap-3 sm:px-6 sm:text-lg"
+            className="group inline-flex min-h-12 items-center gap-2.5 rounded-xl bg-citron px-5 text-[15px] font-bold text-[#0e1f1c] no-underline transition-transform hover:-translate-y-0.5 hover:bg-citron-deep sm:min-h-14 sm:gap-3 sm:px-6 sm:text-lg"
           >
-            <WhatsAppIcon className="h-5 w-5 transition-transform group-hover:scale-110 sm:h-6 sm:w-6" />
+            <WhatsAppIcon className="h-5 w-5 text-[#0e1f1c] transition-transform group-hover:scale-110 sm:h-6 sm:w-6" />
             <span>{dict.hero.cta}</span>
           </a>
-          <p className="text-xs text-foam/75 sm:text-sm">{dict.hero.secondary}</p>
+          <p className="text-xs font-medium text-white/90 sm:text-sm">{dict.hero.secondary}</p>
           <span
             className="mt-1 h-1 w-24 rounded-full bg-citron animate-pulse-line sm:w-28"
             aria-hidden="true"
