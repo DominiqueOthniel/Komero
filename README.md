@@ -76,7 +76,7 @@ Set `NEXT_PUBLIC_API_URL` to your FastAPI base (`http://localhost:8000/api/v1`).
 ### Frontend (Netlify)
 
 - Next.js App Router via `@netlify/plugin-nextjs` (`publish = ".next"`)
-- Set site env: `NEXT_PUBLIC_API_URL=https://<your-api-host>/api/v1`
+- `NEXT_PUBLIC_API_URL` is set in `netlify.toml` (currently a temporary tunnel for demos). After Render is up, change it to `https://<your-api-host>/api/v1` and redeploy.
 - Clear any old Publish directory override such as `out`
 
 ### Backend (Render Blueprint)
