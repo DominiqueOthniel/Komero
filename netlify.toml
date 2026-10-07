@@ -1,16 +1,17 @@
 [build]
   command = "npm run build"
-  publish = "out"
+  # Leave publish unset so Netlify OpenNext serves the Next.js app correctly.
 
 [build.environment]
   NODE_VERSION = "22"
   NEXT_TELEMETRY_DISABLED = "1"
+  NETLIFY_NEXT_SKEW_PROTECTION = "true"
 
 [[redirects]]
   from = "/"
-  to = "/en/"
+  to = "/en"
   status = 302
-  force = true
+  force = false
 
 [[headers]]
   for = "/_next/static/*"
@@ -23,15 +24,9 @@
     Cache-Control = "public, max-age=604800, stale-while-revalidate=86400"
 
 [[headers]]
-  for = "/brand/*"
-  [headers.values]
-    Cache-Control = "public, max-age=604800, stale-while-revalidate=86400"
-
-[[headers]]
   for = "/*"
   [headers.values]
     X-Frame-Options = "DENY"
     X-Content-Type-Options = "nosniff"
     Referrer-Policy = "strict-origin-when-cross-origin"
     Permissions-Policy = "camera=(), microphone=(), geolocation=()"
-    X-DNS-Prefetch-Control = "on"
