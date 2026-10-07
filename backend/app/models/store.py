@@ -54,6 +54,10 @@ class Store(Base):
         "Customer", back_populates="store", cascade="all, delete-orphan"
     )
     orders = relationship("Order", back_populates="store", cascade="all, delete-orphan")
+    sales = relationship("Sale", back_populates="store", cascade="all, delete-orphan")
+    receipts = relationship(
+        "Receipt", back_populates="store", cascade="all, delete-orphan"
+    )
     whatsapp_connection = relationship(
         "WhatsAppConnection",
         back_populates="store",

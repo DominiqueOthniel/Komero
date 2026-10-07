@@ -3,7 +3,7 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import DateTime, Enum, ForeignKey, String, Text, func
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -21,6 +21,8 @@ class ConversationState(str, enum.Enum):
     ADDING_PRODUCT = "adding_product"
     WAITING_PRODUCT_CONFIRMATION = "waiting_product_confirmation"
     EDITING_PRODUCT = "editing_product"
+    RECORDING_SALE = "recording_sale"
+    WAITING_RECEIPT_NAME = "waiting_receipt_name"
     ORDER_DISCUSSION = "order_discussion"
     GENERAL_ASSISTANCE = "general_assistance"
 
@@ -35,6 +37,7 @@ class MessageType(str, enum.Enum):
     IMAGE = "image"
     AUDIO = "audio"
     BUTTON = "button"
+    DOCUMENT = "document"
     SYSTEM = "system"
 
 
@@ -61,6 +64,7 @@ class Conversation(Base):
         default=ConversationState.NEW_USER,
         nullable=False,
     )
+    context: Mapped[dict | None] = mapped_column(JSONB, default=dict)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

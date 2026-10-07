@@ -1,20 +1,34 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { apiFetch } from "@/lib/api";
+import { apiFetch, Store } from "@/lib/api";
+
+type Outbound = {
+  type?: string;
+  body?: string;
+  buttons?: { id: string; title: string }[];
+  filename?: string;
+  caption?: string;
+};
 
 export default function WhatsAppPage() {
+  const [store, setStore] = useState<Store | null>(null);
   const [adapter, setAdapter] = useState<Record<string, string> | null>(null);
   const [preview, setPreview] = useState<Record<string, unknown> | null>(null);
+  const [simLog, setSimLog] = useState<Outbound[]>([]);
   const [text, setText] = useState(
     "Nike Air Max 95 noire a 45000 FCFA, j'en ai 4 en taille 42 et 2 en taille 43.",
   );
+  const [saleText, setSaleText] = useState("vente BBC 9000");
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     apiFetch<Record<string, string>>("/whatsapp/adapter", {}, true)
       .then(setAdapter)
       .catch((err: Error) => setError(err.message));
+    apiFetch<Store[]>("/stores", {}, true)
+      .then((stores) => setStore(stores[0] ?? null))
+      .catch(() => undefined);
   }, []);
 
   async function runExtract() {
@@ -34,11 +48,33 @@ export default function WhatsAppPage() {
     }
   }
 
+  async function simulate(message: string, buttonId?: string) {
+    if (!store) return;
+    setError(null);
+    try {
+      const result = await apiFetch<{ outbound: Outbound[] }>(
+        `/whatsapp/stores/${store.id}/simulate`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            from_number: "237670000111",
+            text: message,
+            button_id: buttonId,
+          }),
+        },
+        true,
+      );
+      setSimLog(result.outbound || []);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Simulation failed");
+    }
+  }
+
   return (
     <div>
       <h1 className="font-display text-3xl font-bold text-ink">WhatsApp</h1>
       <p className="mt-2 text-ink-soft">
-        Meta Cloud API wiring is ready. Phase 2 will connect the full conversation engine.
+        Meta Cloud API webhook is live. Use the simulator below for sales and receipts without Meta credentials.
       </p>
 
       <div className="mt-8 rounded-2xl border border-line bg-foam p-5">
@@ -46,6 +82,54 @@ export default function WhatsAppPage() {
         <pre className="mt-3 overflow-x-auto text-sm text-ink-soft">
           {adapter ? JSON.stringify(adapter, null, 2) : "Loading…"}
         </pre>
+      </div>
+
+      <div className="mt-6 max-w-2xl rounded-2xl border border-line bg-foam p-5">
+        <h2 className="font-display text-xl font-semibold">Sale + receipt simulator</h2>
+        <p className="mt-2 text-sm text-ink-soft">
+          Flow: record sale → Receipt button → No name → PDF receipt.
+        </p>
+        <input
+          value={saleText}
+          onChange={(e) => setSaleText(e.target.value)}
+          className="mt-3 w-full rounded-xl border border-line px-3 py-3"
+        />
+        <div className="mt-3 flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => void simulate(saleText)}
+            className="rounded-xl bg-leaf px-4 py-3 text-sm font-semibold text-white"
+          >
+            Send sale message
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              const last = simLog.find((m) => m.type === "buttons");
+              const receiptBtn = last?.buttons?.find((b) => b.id.startsWith("receipt:"));
+              if (receiptBtn) void simulate(receiptBtn.title, receiptBtn.id);
+            }}
+            className="rounded-xl border border-line px-4 py-3 text-sm font-semibold"
+          >
+            Tap Receipt
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              const last = [...simLog].reverse().find((m) => m.type === "buttons");
+              const noName = last?.buttons?.find((b) => b.id.startsWith("receipt_noname:"));
+              void simulate("No name", noName?.id || "receipt_noname:pending");
+            }}
+            className="rounded-xl border border-line px-4 py-3 text-sm font-semibold"
+          >
+            Tap No name
+          </button>
+        </div>
+        {simLog.length > 0 ? (
+          <pre className="mt-4 max-h-80 overflow-auto rounded-xl bg-ink p-4 text-sm text-citron">
+            {JSON.stringify(simLog, null, 2)}
+          </pre>
+        ) : null}
       </div>
 
       <div className="mt-6 max-w-2xl rounded-2xl border border-line bg-foam p-5">

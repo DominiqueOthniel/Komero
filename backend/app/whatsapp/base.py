@@ -12,3 +12,14 @@ class WhatsAppAdapter(ABC):
         self, to: str, body: str, buttons: list[dict[str, str]]
     ) -> dict[str, Any]:
         raise NotImplementedError
+
+    @abstractmethod
+    def send_document(
+        self,
+        to: str,
+        *,
+        document_path: str,
+        filename: str,
+        caption: str | None = None,
+    ) -> dict[str, Any]:
+        raise NotImplementedError
