@@ -147,7 +147,7 @@ Local simulator: Dashboard → WhatsApp (no Meta credentials required when `WHAT
 ## Phase roadmap
 
 1. Foundation: schema, auth, store/product APIs, dashboard, public shop
-2. WhatsApp sales + PDF receipts + conversation engine (this branch)
-3. AI product confirmation flow + images + full onboarding
+2. WhatsApp sales + PDF receipts + conversation engine
+3. AI product confirmation (Confirm/Edit/Cancel) + merchant onboarding
 4. Orders + customers + analytics
 5. Voice, Mobile Money, delivery, subscriptions

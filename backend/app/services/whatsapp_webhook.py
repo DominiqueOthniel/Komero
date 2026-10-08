@@ -3,6 +3,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from app.services.conversation_engine import handle_incoming_message, identify_store
+from app.services.onboarding import find_or_create_merchant_store
 from app.whatsapp.base import WhatsAppAdapter
 
 
@@ -55,17 +56,20 @@ def process_webhook_payload(
 ) -> dict[str, Any]:
     results = []
     for inbound in extract_inbound_messages(payload):
+        if not inbound.get("from"):
+            results.append({"ok": False, "error": "missing_from"})
+            continue
+
         store = identify_store(
             db,
             inbound.get("phone_number_id"),
             inbound.get("display_phone_number"),
+            from_number=str(inbound["from"]),
         )
         if not store:
-            results.append({"ok": False, "error": "store_not_found"})
-            continue
-        if not inbound.get("from"):
-            results.append({"ok": False, "error": "missing_from"})
-            continue
+            # First contact: create a draft merchant shop for onboarding.
+            store = find_or_create_merchant_store(db, str(inbound["from"]))
+
         result = handle_incoming_message(
             db,
             adapter,
