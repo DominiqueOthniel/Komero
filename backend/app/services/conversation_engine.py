@@ -389,6 +389,11 @@ def _format_product_draft(draft: dict[str, Any], lang: str | None) -> str:
     missing = draft.get("missing_fields") or []
     if missing:
         lines.append(f"{t('label_missing', lang)}: " + ", ".join(missing))
+    for note in draft.get("notes") or []:
+        lines.append(f"• {note}")
+    confidence = draft.get("confidence")
+    if confidence is not None and float(confidence) < 0.7:
+        lines.append(t("product_draft_low_confidence", lang))
     lines.append(t("product_draft_footer", lang))
     return "\n".join(lines)
 
