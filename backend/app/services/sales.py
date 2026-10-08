@@ -117,3 +117,10 @@ def match_product_by_name(db: Session, store_id: uuid.UUID, name: str) -> Produc
         if needle in product.name.lower() or product.name.lower() in needle:
             return product
     return None
+
+
+def cancel_sale(db: Session, sale: Sale) -> Sale:
+    sale.status = SaleStatus.CANCELLED
+    db.commit()
+    db.refresh(sale)
+    return get_sale(db, sale.id)  # type: ignore[return-value]
