@@ -39,6 +39,19 @@ def main() -> None:
 
         phone = "237670099001"
         adapter.sent.clear()
+        lang = handle_incoming_message(
+            db, adapter, store=store, from_number=phone, text="bonjour"
+        )
+        if lang["action"] == "choose_language":
+            handle_incoming_message(
+                db,
+                adapter,
+                store=store,
+                from_number=phone,
+                text="",
+                button_id="lang_fr",
+            )
+        adapter.sent.clear()
         r1 = handle_incoming_message(
             db, adapter, store=store, from_number=phone, text="", button_id="add_product"
         )
@@ -77,12 +90,21 @@ def main() -> None:
         draft_store = find_or_create_merchant_store(db, merchant_phone)
         assert draft_store.status == StoreStatus.DRAFT
         adapter.sent.clear()
-        o1 = handle_incoming_message(
+        o0 = handle_incoming_message(
             db,
             adapter,
             store=draft_store,
             from_number=merchant_phone,
             text="bonjour",
+        )
+        assert o0["action"] == "choose_language", o0
+        o1 = handle_incoming_message(
+            db,
+            adapter,
+            store=draft_store,
+            from_number=merchant_phone,
+            text="",
+            button_id="lang_fr",
         )
         assert o1["action"] == "ask_store_name", o1
         adapter.sent.clear()

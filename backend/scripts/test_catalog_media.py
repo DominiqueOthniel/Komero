@@ -31,6 +31,15 @@ def main() -> None:
         r = handle_incoming_message(
             db, adapter, store=store, from_number=phone, text="bonjour"
         )
+        if r["action"] == "choose_language":
+            r = handle_incoming_message(
+                db,
+                adapter,
+                store=store,
+                from_number=phone,
+                text="",
+                button_id="lang_fr",
+            )
         assert r["action"] == "welcome", r
         catalog = handle_incoming_message(
             db, adapter, store=store, from_number=phone, text="", button_id="view_catalog"
@@ -67,11 +76,24 @@ def main() -> None:
         print("Image product OK:", product.name, product.images[0].image_url)
 
         adapter.sent.clear()
+        voice_phone = "237670088222"
+        voice_lang = handle_incoming_message(
+            db, adapter, store=store, from_number=voice_phone, text="hi"
+        )
+        if voice_lang["action"] == "choose_language":
+            handle_incoming_message(
+                db,
+                adapter,
+                store=store,
+                from_number=voice_phone,
+                text="",
+                button_id="lang_en",
+            )
         voice = handle_incoming_message(
             db,
             adapter,
             store=store,
-            from_number="237670088222",
+            from_number=voice_phone,
             text="",
             media_id="audio-test-1",
             media_kind="audio",

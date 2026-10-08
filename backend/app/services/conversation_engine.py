@@ -23,10 +23,11 @@ from app.models.product import Product, ProductStatus
 from app.models.store import Store, StoreStatus
 from app.models.whatsapp import WhatsAppConnection
 from app.schemas.product import ProductCreate, ProductImageIn, ProductVariantIn
+from app.services.bot_copy import buttons, normalize_lang, t
 from app.services.catalog import product_page_url, public_media_url, shop_catalog_url
 from app.services.money import format_xaf
 from app.services.onboarding import activate_store_with_name, find_store_by_merchant_phone
-from app.services.products import create_product
+from app.services.products import create_product, delete_product, get_product, list_products
 from app.services.receipts import create_receipt, verification_url
 from app.services.sales import (
     create_sale,
@@ -47,19 +48,36 @@ SALE_PATTERNS = [
         r"^(?:vente|vendre|sale|sell)\s+(.+?)\s+(?:a|à|@)?\s*(\d+(?:[.,]\d+)?)\s*(?:f|fcfa|xaf)?$",
         re.I,
     ),
-    re.compile(
-        r"^(.+?)\s+(?:x\s*)?(\d+)\s+(?:a|à|@)?\s*(\d+(?:[.,]\d+)?)\s*(?:f|fcfa|xaf)?$",
-        re.I,
-    ),
-    re.compile(
-        r"^(.+?)\s+(?:a|à|@)?\s*(\d+(?:[.,]\d+)?)\s*(?:f|fcfa|xaf)$",
-        re.I,
-    ),
 ]
+
+MENU_TRIGGERS = {
+    "menu",
+    "0",
+    "accueil",
+    "home",
+    "start",
+    "bonjour",
+    "salut",
+    "hello",
+    "hi",
+}
+CANCEL_TRIGGERS = {"cancel", "annuler", "non", "no"}
 
 
 def _normalize_button(value: str) -> str:
     return value.strip().lower()
+
+
+def _lang(conversation: Conversation) -> str | None:
+    return normalize_lang((conversation.context or {}).get("lang"))
+
+
+def _set_context(conversation: Conversation, **kwargs: Any) -> None:
+    lang = _lang(conversation)
+    ctx = dict(kwargs)
+    if lang:
+        ctx["lang"] = lang
+    conversation.context = ctx
 
 
 def _parse_sale_text(text: str) -> dict[str, Any] | None:
@@ -83,10 +101,6 @@ def _parse_sale_text(text: str) -> dict[str, Any] | None:
         name = name.strip(" -:")
         if not name or unit_price <= 0:
             continue
-        if not cleaned.lower().startswith(("vente", "vendre", "sale", "sell")):
-            # Avoid treating free-form product descriptions as sales.
-            if "fcfa" not in cleaned.lower() and "xaf" not in cleaned.lower():
-                continue
         return {"name": name, "quantity": quantity, "unit_price": unit_price}
     return None
 
@@ -167,9 +181,9 @@ def _send_buttons(
     conversation: Conversation,
     to: str,
     body: str,
-    buttons: list[dict[str, str]],
+    button_list: list[dict[str, str]],
 ) -> None:
-    result = adapter.send_buttons(to, body, buttons)
+    result = adapter.send_buttons(to, body, button_list)
     _store_message(
         db,
         conversation,
@@ -188,12 +202,13 @@ def _send_catalog(
     to: str,
     intro: str | None = None,
 ) -> None:
+    lang = _lang(conversation)
     url = shop_catalog_url(store)
-    body = intro or f"Catalog for {store.name}."
+    body = intro or t("catalog_intro", lang, name=store.name)
     result = adapter.send_cta_url(
         to,
         body,
-        button_text="Open catalog",
+        button_text=t("btn_open_catalog", lang)[:20],
         url=url,
     )
     _store_message(
@@ -237,130 +252,154 @@ def identify_store(
     return None
 
 
-def _sale_recorded_reply(sale) -> tuple[str, list[dict[str, str]]]:
-    body = f"Vente enregistree : {sale.public_code}."
-    buttons = [
-        {"id": f"receipt:{sale.public_code}", "title": "Recu PDF"},
-        {"id": "add_product", "title": "Add a product"},
-        {"id": "more_actions", "title": "More actions"},
-    ]
-    return body, buttons
-
-
-def _ask_receipt_name(sale) -> tuple[str, list[dict[str, str]]]:
-    item_label = "1 article" if sale.item_count == 1 else f"{sale.item_count} articles"
-    body = (
-        f"Recu pour la vente {sale.public_code} : {item_label}, {format_xaf(sale.total_amount)}. "
-        "Au nom de qui ? Ecrivez le nom du client, ou tapez Sans nom."
+def _ask_language(
+    db: Session,
+    adapter: WhatsAppAdapter,
+    conversation: Conversation,
+    to: str,
+) -> dict[str, Any]:
+    conversation.state = ConversationState.CHOOSING_LANGUAGE
+    db.commit()
+    _send_buttons(
+        db,
+        adapter,
+        conversation,
+        to,
+        t("ask_language", "fr"),
+        buttons("fr", ("lang_fr", "btn_fr"), ("lang_en", "btn_en")),
     )
-    buttons = [
-        {"id": f"receipt_noname:{sale.public_code}", "title": "Sans nom"},
-        {"id": "receipt_cancel", "title": "Annuler"},
-    ]
-    return body, buttons
+    return {"ok": True, "action": "choose_language"}
 
 
-def _issue_receipt(
+def _send_main_menu(
     db: Session,
     adapter: WhatsAppAdapter,
     store: Store,
     conversation: Conversation,
     to: str,
-    sale,
-    customer_name: str | None,
 ) -> None:
-    receipt = create_receipt(db, store, sale, customer_name)
-    pdf_path = Path(receipt.pdf_path or "")
-    if not pdf_path.exists():
-        from app.models.sale import Sale
-        from app.services.receipts import build_receipt_pdf
-        from sqlalchemy.orm import joinedload
-
-        sale_full = db.scalar(
-            select(Sale).options(joinedload(Sale.items)).where(Sale.id == sale.id)
-        )
-        if sale_full:
-            pdf_path = Path(__file__).resolve().parents[2] / "storage" / "receipts" / (
-                f"Receipt-{receipt.number}.pdf"
-            )
-            pdf_path.parent.mkdir(parents=True, exist_ok=True)
-            build_receipt_pdf(store, sale_full, receipt, pdf_path)
-            receipt.pdf_path = str(pdf_path)
-            db.commit()
-
-    verify = verification_url(receipt.number, receipt.verification_key)
-    filename = f"Recu-{receipt.number}.pdf"
-    caption = (
-        f"Recu {receipt.number} · {format_xaf(sale.total_amount)}. "
-        f"Verification : {verify}"
-    )
-    sent_pdf = False
-    if pdf_path.exists():
-        try:
-            result = adapter.send_document(
-                to,
-                document_path=str(pdf_path),
-                filename=filename,
-                caption=caption,
-            )
-            _store_message(
-                db,
-                conversation,
-                MessageDirection.OUTBOUND,
-                caption,
-                MessageType.DOCUMENT,
-                whatsapp_message_id=str(result.get("id") or ""),
-                media_url=verify,
-            )
-            sent_pdf = True
-        except Exception:
-            sent_pdf = False
-
-    if not sent_pdf:
-        _send_text(
-            db,
-            adapter,
-            conversation,
-            to,
-            f"Recu {receipt.number} pret en ligne (PDF) : {verify}",
-        )
-    _send_text(
+    lang = _lang(conversation)
+    conversation.state = ConversationState.GENERAL_ASSISTANCE
+    _set_context(conversation)
+    db.commit()
+    _send_buttons(
         db,
         adapter,
         conversation,
         to,
-        f"Partagez ce lien de verification avec votre client :\n{verify}",
+        t("main_menu", lang, name=store.name),
+        buttons(
+            lang,
+            ("menu_products", "btn_products"),
+            ("menu_sales", "btn_sales"),
+            ("menu_more", "btn_more"),
+        ),
     )
+
+
+def _send_products_menu(
+    db: Session,
+    adapter: WhatsAppAdapter,
+    conversation: Conversation,
+    to: str,
+) -> None:
+    lang = _lang(conversation)
     conversation.state = ConversationState.GENERAL_ASSISTANCE
-    conversation.context = {"last_receipt_number": receipt.number}
     db.commit()
+    _send_buttons(
+        db,
+        adapter,
+        conversation,
+        to,
+        t("products_menu", lang),
+        buttons(
+            lang,
+            ("add_product", "btn_add"),
+            ("list_products", "btn_list"),
+            ("delete_product", "btn_delete"),
+        ),
+    )
 
 
-def _format_product_draft(draft: dict[str, Any]) -> str:
-    lines = ["Product draft:"]
-    lines.append(f"Name: {draft.get('name') or '?'}")
+def _send_sales_menu(
+    db: Session,
+    adapter: WhatsAppAdapter,
+    conversation: Conversation,
+    to: str,
+) -> None:
+    lang = _lang(conversation)
+    conversation.state = ConversationState.GENERAL_ASSISTANCE
+    db.commit()
+    _send_buttons(
+        db,
+        adapter,
+        conversation,
+        to,
+        t("sales_menu", lang),
+        buttons(
+            lang,
+            ("record_sale_help", "btn_new_sale"),
+            ("receipt_last", "btn_receipt"),
+            ("main_menu", "btn_back"),
+        ),
+    )
+
+
+def _send_more_menu(
+    db: Session,
+    adapter: WhatsAppAdapter,
+    conversation: Conversation,
+    to: str,
+) -> None:
+    lang = _lang(conversation)
+    conversation.state = ConversationState.GENERAL_ASSISTANCE
+    db.commit()
+    _send_buttons(
+        db,
+        adapter,
+        conversation,
+        to,
+        t("more_menu", lang),
+        buttons(
+            lang,
+            ("view_catalog", "btn_catalog"),
+            ("change_language", "btn_language"),
+            ("help", "btn_help"),
+        ),
+    )
+
+
+def _format_product_draft(draft: dict[str, Any], lang: str | None) -> str:
+    lines = [t("product_draft_title", lang)]
+    lines.append(f"{t('label_name', lang)}: {draft.get('name') or '?'}")
     price = draft.get("price")
-    lines.append(f"Price: {format_xaf(Decimal(str(price))) if price is not None else '?'}")
+    lines.append(
+        f"{t('label_price', lang)}: "
+        f"{format_xaf(Decimal(str(price))) if price is not None else '?'}"
+    )
     stock = draft.get("stock")
-    lines.append(f"Stock: {stock if stock is not None else '?'}")
+    lines.append(
+        f"{t('label_stock', lang)}: {stock if stock is not None else '?'}"
+    )
     variants = draft.get("variants") or []
     if variants:
         sizes = ", ".join(str(v.get("value")) for v in variants if v.get("value"))
         if sizes:
-            lines.append(f"Sizes: {sizes}")
+            lines.append(f"{t('label_sizes', lang)}: {sizes}")
     missing = draft.get("missing_fields") or []
     if missing:
-        lines.append("Missing: " + ", ".join(missing))
-    lines.append("Confirm to publish, Edit to change, or Cancel.")
+        lines.append(f"{t('label_missing', lang)}: " + ", ".join(missing))
+    lines.append(t("product_draft_footer", lang))
     return "\n".join(lines)
 
 
-def _product_confirm_buttons() -> list[dict[str, str]]:
-    return [
-        {"id": "product_confirm", "title": "Confirm"},
-        {"id": "product_edit", "title": "Edit"},
-        {"id": "product_cancel", "title": "Cancel"},
-    ]
+def _product_confirm_buttons(lang: str | None) -> list[dict[str, str]]:
+    return buttons(
+        lang,
+        ("product_confirm", "btn_confirm"),
+        ("product_edit", "btn_edit"),
+        ("product_cancel", "btn_cancel"),
+    )
 
 
 def _log_ai_action(
@@ -391,55 +430,59 @@ def _start_product_draft(
     *,
     image_path: str | None = None,
 ) -> dict[str, Any]:
+    lang = _lang(conversation) or "fr"
     provider = get_ai_provider()
     if image_path:
         draft = provider.extract_product_from_image(
-            image_path=image_path, caption=text, language="fr"
+            image_path=image_path, caption=text, language=lang
         )
     else:
-        draft = provider.extract_product(text, language="fr")
-    _log_ai_action(db, conversation, AIActionType.EXTRACT_PRODUCT, text or image_path or "", draft)
+        draft = provider.extract_product(text, language=lang)
+    _log_ai_action(
+        db, conversation, AIActionType.EXTRACT_PRODUCT, text or image_path or "", draft
+    )
 
     if draft.get("missing_fields"):
         conversation.state = ConversationState.ADDING_PRODUCT
-        conversation.context = {
-            "pending_product": draft,
-            "raw_text": text,
-            "image_path": image_path or draft.get("image_path"),
-        }
+        _set_context(
+            conversation,
+            pending_product=draft,
+            raw_text=text,
+            image_path=image_path or draft.get("image_path"),
+        )
         db.commit()
         missing = ", ".join(draft["missing_fields"])
-        hint = (
-            "Send a photo with a caption, or text like: Robe wax 15000 FCFA, 8 pieces."
-            if image_path
-            else "Example: Robe wax 15000 FCFA, 8 pieces. You can also send a product photo."
+        hint = t(
+            "product_hint_photo" if image_path else "product_hint_text",
+            lang,
         )
         _send_text(
             db,
             adapter,
             conversation,
             to,
-            f"I need more details ({missing}). {hint}",
+            t("product_missing", lang, missing=missing, hint=hint),
         )
         return {"ok": True, "action": "product_missing_fields", "draft": draft}
 
     conversation.state = ConversationState.WAITING_PRODUCT_CONFIRMATION
-    conversation.context = {
-        "pending_product": draft,
-        "raw_text": text,
-        "image_path": image_path or draft.get("image_path"),
-    }
+    _set_context(
+        conversation,
+        pending_product=draft,
+        raw_text=text,
+        image_path=image_path or draft.get("image_path"),
+    )
     db.commit()
-    body = _format_product_draft(draft)
+    body = _format_product_draft(draft, lang)
     if image_path or draft.get("image_path"):
-        body = "Photo received.\n" + body
+        body = t("product_photo_received", lang) + "\n" + body
     _send_buttons(
         db,
         adapter,
         conversation,
         to,
         body,
-        _product_confirm_buttons(),
+        _product_confirm_buttons(lang),
     )
     return {"ok": True, "action": "product_confirm_prompt", "draft": draft}
 
@@ -483,6 +526,140 @@ def _persist_product_from_draft(
     return create_product(db, store.id, payload)
 
 
+def _issue_receipt(
+    db: Session,
+    adapter: WhatsAppAdapter,
+    store: Store,
+    conversation: Conversation,
+    to: str,
+    sale,
+    customer_name: str | None,
+) -> None:
+    lang = _lang(conversation)
+    receipt = create_receipt(db, store, sale, customer_name)
+    pdf_path = Path(receipt.pdf_path or "")
+    if not pdf_path.exists():
+        from app.models.sale import Sale
+        from app.services.receipts import build_receipt_pdf
+        from sqlalchemy.orm import joinedload
+
+        sale_full = db.scalar(
+            select(Sale).options(joinedload(Sale.items)).where(Sale.id == sale.id)
+        )
+        if sale_full:
+            pdf_path = (
+                Path(__file__).resolve().parents[2]
+                / "storage"
+                / "receipts"
+                / f"Receipt-{receipt.number}.pdf"
+            )
+            pdf_path.parent.mkdir(parents=True, exist_ok=True)
+            build_receipt_pdf(store, sale_full, receipt, pdf_path)
+            receipt.pdf_path = str(pdf_path)
+            db.commit()
+
+    verify = verification_url(receipt.number, receipt.verification_key)
+    filename = f"Recu-{receipt.number}.pdf"
+    caption = t(
+        "receipt_caption",
+        lang,
+        number=receipt.number,
+        total=format_xaf(sale.total_amount),
+        verify=verify,
+    )
+    sent_pdf = False
+    if pdf_path.exists():
+        try:
+            result = adapter.send_document(
+                to,
+                document_path=str(pdf_path),
+                filename=filename,
+                caption=caption,
+            )
+            _store_message(
+                db,
+                conversation,
+                MessageDirection.OUTBOUND,
+                caption,
+                MessageType.DOCUMENT,
+                whatsapp_message_id=str(result.get("id") or ""),
+                media_url=verify,
+            )
+            sent_pdf = True
+        except Exception:
+            sent_pdf = False
+
+    if not sent_pdf:
+        _send_text(
+            db,
+            adapter,
+            conversation,
+            to,
+            t("receipt_online", lang, number=receipt.number, verify=verify),
+        )
+    _send_text(
+        db,
+        adapter,
+        conversation,
+        to,
+        t("receipt_share", lang, verify=verify),
+    )
+    conversation.state = ConversationState.GENERAL_ASSISTANCE
+    _set_context(
+        conversation,
+        last_receipt_number=receipt.number,
+        last_sale_id=str(sale.id),
+    )
+    db.commit()
+
+
+def _handle_language_choice(
+    db: Session,
+    adapter: WhatsAppAdapter,
+    store: Store,
+    conversation: Conversation,
+    from_number: str,
+    content: str,
+    button: str,
+) -> dict[str, Any] | None:
+    chosen = None
+    if button == "lang_fr" or normalize_lang(content) == "fr":
+        chosen = "fr"
+    elif button == "lang_en" or normalize_lang(content) == "en":
+        chosen = "en"
+    elif button == "change_language" or content.lower() in {
+        "langue",
+        "language",
+        "lang",
+    }:
+        return _ask_language(db, adapter, conversation, from_number)
+
+    if conversation.state != ConversationState.CHOOSING_LANGUAGE and chosen is None:
+        return None
+
+    if chosen is None:
+        return _ask_language(db, adapter, conversation, from_number)
+
+    conversation.context = {**(conversation.context or {}), "lang": chosen}
+    db.commit()
+    _send_text(db, adapter, conversation, from_number, t("lang_saved", chosen))
+
+    if store.status == StoreStatus.DRAFT or store.name == "Nouvelle boutique":
+        conversation.state = ConversationState.CREATING_STORE
+        db.commit()
+        _send_text(
+            db,
+            adapter,
+            conversation,
+            from_number,
+            t("ask_store_name", chosen),
+        )
+        return {"ok": True, "action": "ask_store_name", "lang": chosen}
+
+    _send_main_menu(db, adapter, store, conversation, from_number)
+    return {"ok": True, "action": "welcome", "lang": chosen}
+
+
 def _handle_creating_store(
     db: Session,
     adapter: WhatsAppAdapter,
@@ -493,13 +670,17 @@ def _handle_creating_store(
     button: str,
     lowered: str,
 ) -> dict[str, Any]:
-    if button == "start_onboarding" or lowered in {"hello", "hi", "bonjour", "salut", "start"}:
+    lang = _lang(conversation)
+    if not lang:
+        return _ask_language(db, adapter, conversation, from_number)
+
+    if button == "start_onboarding" or lowered in MENU_TRIGGERS:
         _send_text(
             db,
             adapter,
             conversation,
             from_number,
-            "Welcome to Komero. What is your shop name?",
+            t("ask_store_name", lang),
         )
         return {"ok": True, "action": "ask_store_name"}
 
@@ -509,43 +690,36 @@ def _handle_creating_store(
             adapter,
             conversation,
             from_number,
-            "Send your shop name to finish setup.",
+            t("ask_store_name_again", lang),
         )
         return {"ok": True, "action": "ask_store_name"}
 
-    if lowered in {"cancel", "annuler"}:
+    if lowered in CANCEL_TRIGGERS:
         _send_text(
             db,
             adapter,
             conversation,
             from_number,
-            "Setup paused. Send your shop name when you are ready.",
+            t("onboarding_paused", lang),
         )
         return {"ok": True, "action": "onboarding_paused"}
 
     store = activate_store_with_name(db, store, content)
-    conversation.state = ConversationState.GENERAL_ASSISTANCE
-    conversation.context = {}
-    db.commit()
-    _send_buttons(
+    _send_text(
         db,
         adapter,
         conversation,
         from_number,
-        f"Shop ready: {store.name}. You can add products or record sales.",
-        [
-            {"id": "add_product", "title": "Add a product"},
-            {"id": "record_sale_help", "title": "Record a sale"},
-            {"id": "view_catalog", "title": "Catalog link"},
-        ],
+        t("store_ready", lang, name=store.name),
     )
+    _send_main_menu(db, adapter, store, conversation, from_number)
     _send_catalog(
         db,
         adapter,
         conversation,
         store,
         from_number,
-        intro=f"Here is your public catalog for {store.name}.",
+        intro=t("catalog_intro", lang, name=store.name),
     )
     return {"ok": True, "action": "store_created", "store": store.name}
 
@@ -562,14 +736,15 @@ def _handle_product_states(
     *,
     image_path: str | None = None,
 ) -> dict[str, Any] | None:
+    lang = _lang(conversation)
     state = conversation.state
 
     if state == ConversationState.ADDING_PRODUCT:
-        if button == "product_cancel" or lowered in {"cancel", "annuler"}:
-            conversation.state = ConversationState.GENERAL_ASSISTANCE
-            conversation.context = {}
-            db.commit()
-            _send_text(db, adapter, conversation, from_number, "Product creation cancelled.")
+        if button == "product_cancel" or lowered in CANCEL_TRIGGERS:
+            _send_text(
+                db, adapter, conversation, from_number, t("product_cancelled", lang)
+            )
+            _send_products_menu(db, adapter, conversation, from_number)
             return {"ok": True, "action": "product_cancelled"}
         if image_path:
             return _start_product_draft(
@@ -581,7 +756,7 @@ def _handle_product_states(
                 adapter,
                 conversation,
                 from_number,
-                "Send product text or a photo with caption. Example: Robe rouge 12000 FCFA, 5 pieces.",
+                t("add_product_prompt", lang),
             )
             return {"ok": True, "action": "add_product_prompt"}
         prior_image = (conversation.context or {}).get("image_path")
@@ -597,11 +772,11 @@ def _handle_product_states(
     if state == ConversationState.WAITING_PRODUCT_CONFIRMATION:
         draft = (conversation.context or {}).get("pending_product") or {}
         image_path = image_path or (conversation.context or {}).get("image_path")
-        if button == "product_cancel" or lowered in {"cancel", "annuler"}:
-            conversation.state = ConversationState.GENERAL_ASSISTANCE
-            conversation.context = {}
-            db.commit()
-            _send_text(db, adapter, conversation, from_number, "Product creation cancelled.")
+        if button == "product_cancel" or lowered in CANCEL_TRIGGERS:
+            _send_text(
+                db, adapter, conversation, from_number, t("product_cancelled", lang)
+            )
+            _send_products_menu(db, adapter, conversation, from_number)
             return {"ok": True, "action": "product_cancelled"}
 
         if button == "product_edit" or lowered in {"edit", "modifier"}:
@@ -612,11 +787,17 @@ def _handle_product_states(
                 adapter,
                 conversation,
                 from_number,
-                "Send the corrected details as text, or a new photo with caption.",
+                t("product_edit_prompt", lang),
             )
             return {"ok": True, "action": "product_edit_prompt"}
 
-        if button == "product_confirm" or lowered in {"confirm", "confirmer", "ok", "oui"}:
+        if button == "product_confirm" or lowered in {
+            "confirm",
+            "confirmer",
+            "ok",
+            "oui",
+            "yes",
+        }:
             if not draft.get("name") or draft.get("price") is None:
                 conversation.state = ConversationState.ADDING_PRODUCT
                 db.commit()
@@ -625,24 +806,31 @@ def _handle_product_states(
                     adapter,
                     conversation,
                     from_number,
-                    "Draft incomplete. Send the product again with name and price.",
+                    t("product_incomplete", lang),
                 )
                 return {"ok": False, "action": "product_incomplete"}
-            product = _persist_product_from_draft(db, store, draft, image_path=image_path)
-            conversation.state = ConversationState.GENERAL_ASSISTANCE
-            conversation.context = {"last_product_id": str(product.id)}
+            product = _persist_product_from_draft(
+                db, store, draft, image_path=image_path
+            )
+            _set_context(conversation, last_product_id=str(product.id))
             db.commit()
             _send_buttons(
                 db,
                 adapter,
                 conversation,
                 from_number,
-                f"Product published: {product.name} ({format_xaf(product.price)}).",
-                [
-                    {"id": "add_product", "title": "Add another"},
-                    {"id": "view_catalog", "title": "Catalog link"},
-                    {"id": "record_sale_help", "title": "Record a sale"},
-                ],
+                t(
+                    "product_published",
+                    lang,
+                    name=product.name,
+                    price=format_xaf(product.price),
+                ),
+                buttons(
+                    lang,
+                    ("add_product", "btn_add"),
+                    ("view_catalog", "btn_catalog"),
+                    ("main_menu", "btn_menu"),
+                ),
             )
             _send_catalog(
                 db,
@@ -650,8 +838,14 @@ def _handle_product_states(
                 conversation,
                 store,
                 from_number,
-                intro=f"Catalog updated. Product page: {product_page_url(store, str(product.id))}",
+                intro=t(
+                    "catalog_updated",
+                    lang,
+                    url=product_page_url(store, str(product.id)),
+                ),
             )
+            conversation.state = ConversationState.GENERAL_ASSISTANCE
+            db.commit()
             return {
                 "ok": True,
                 "action": "product_published",
@@ -664,17 +858,17 @@ def _handle_product_states(
             adapter,
             conversation,
             from_number,
-            _format_product_draft(draft),
-            _product_confirm_buttons(),
+            _format_product_draft(draft, lang),
+            _product_confirm_buttons(lang),
         )
         return {"ok": True, "action": "product_confirm_prompt"}
 
     if state == ConversationState.EDITING_PRODUCT:
-        if button == "product_cancel" or lowered in {"cancel", "annuler"}:
-            conversation.state = ConversationState.GENERAL_ASSISTANCE
-            conversation.context = {}
-            db.commit()
-            _send_text(db, adapter, conversation, from_number, "Product creation cancelled.")
+        if button == "product_cancel" or lowered in CANCEL_TRIGGERS:
+            _send_text(
+                db, adapter, conversation, from_number, t("product_cancelled", lang)
+            )
+            _send_products_menu(db, adapter, conversation, from_number)
             return {"ok": True, "action": "product_cancelled"}
         if image_path:
             return _start_product_draft(
@@ -686,12 +880,163 @@ def _handle_product_states(
                 adapter,
                 conversation,
                 from_number,
-                "Send the corrected product details.",
+                t("product_edit_prompt", lang),
             )
             return {"ok": True, "action": "product_edit_prompt"}
         return _start_product_draft(db, adapter, conversation, from_number, content)
 
     return None
+
+
+def _handle_delete_states(
+    db: Session,
+    adapter: WhatsAppAdapter,
+    store: Store,
+    conversation: Conversation,
+    from_number: str,
+    content: str,
+    button: str,
+    lowered: str,
+) -> dict[str, Any] | None:
+    lang = _lang(conversation)
+
+    if conversation.state == ConversationState.CONFIRMING_DELETE:
+        product_id = (conversation.context or {}).get("pending_delete_id")
+        if button in {"delete_no", "main_menu"} or lowered in CANCEL_TRIGGERS | {
+            "non",
+            "no",
+        }:
+            _send_text(
+                db, adapter, conversation, from_number, t("delete_cancelled", lang)
+            )
+            _send_products_menu(db, adapter, conversation, from_number)
+            return {"ok": True, "action": "delete_cancelled"}
+        if button == "delete_yes" or lowered in {"oui", "yes", "ok", "confirm", "confirmer"}:
+            product = (
+                get_product(db, store.id, uuid.UUID(product_id)) if product_id else None
+            )
+            if not product:
+                _send_text(
+                    db, adapter, conversation, from_number, t("delete_not_found", lang)
+                )
+                _send_products_menu(db, adapter, conversation, from_number)
+                return {"ok": False, "action": "delete_not_found"}
+            name = product.name
+            delete_product(db, product)
+            _send_text(
+                db,
+                adapter,
+                conversation,
+                from_number,
+                t("delete_done", lang, name=name),
+            )
+            _send_products_menu(db, adapter, conversation, from_number)
+            return {"ok": True, "action": "product_deleted", "name": name}
+        product = get_product(db, store.id, uuid.UUID(product_id)) if product_id else None
+        if product:
+            _send_buttons(
+                db,
+                adapter,
+                conversation,
+                from_number,
+                t(
+                    "delete_confirm",
+                    lang,
+                    name=product.name,
+                    price=format_xaf(product.price),
+                ),
+                buttons(
+                    lang,
+                    ("delete_yes", "btn_yes_delete"),
+                    ("delete_no", "btn_no"),
+                    ("main_menu", "btn_menu"),
+                ),
+            )
+        return {"ok": True, "action": "awaiting_delete_confirm"}
+
+    if conversation.state != ConversationState.DELETING_PRODUCT:
+        return None
+
+    if button == "main_menu" or lowered in MENU_TRIGGERS | CANCEL_TRIGGERS:
+        _send_text(db, adapter, conversation, from_number, t("delete_cancelled", lang))
+        _send_main_menu(db, adapter, store, conversation, from_number)
+        return {"ok": True, "action": "delete_cancelled"}
+
+    products = list_products(db, store.id)[:10]
+    chosen = None
+    if content.isdigit():
+        index = int(content) - 1
+        if 0 <= index < len(products):
+            chosen = products[index]
+    if chosen is None and content:
+        chosen = match_product_by_name(db, store.id, content)
+
+    if not chosen:
+        lines = "\n".join(
+            f"{i}. {p.name} · {format_xaf(p.price)}" for i, p in enumerate(products, 1)
+        )
+        _send_text(
+            db,
+            adapter,
+            conversation,
+            from_number,
+            t("delete_not_found", lang)
+            + "\n"
+            + t("delete_prompt", lang, lines=lines or "-"),
+        )
+        return {"ok": False, "action": "delete_not_found"}
+
+    conversation.state = ConversationState.CONFIRMING_DELETE
+    _set_context(conversation, pending_delete_id=str(chosen.id))
+    db.commit()
+    _send_buttons(
+        db,
+        adapter,
+        conversation,
+        from_number,
+        t(
+            "delete_confirm",
+            lang,
+            name=chosen.name,
+            price=format_xaf(chosen.price),
+        ),
+        buttons(
+            lang,
+            ("delete_yes", "btn_yes_delete"),
+            ("delete_no", "btn_no"),
+            ("main_menu", "btn_menu"),
+        ),
+    )
+    return {"ok": True, "action": "confirm_delete", "product_id": str(chosen.id)}
+
+
+def _start_delete_flow(
+    db: Session,
+    adapter: WhatsAppAdapter,
+    store: Store,
+    conversation: Conversation,
+    to: str,
+) -> dict[str, Any]:
+    lang = _lang(conversation)
+    products = list_products(db, store.id)[:10]
+    if not products:
+        _send_text(db, adapter, conversation, to, t("no_products", lang))
+        _send_products_menu(db, adapter, conversation, to)
+        return {"ok": True, "action": "no_products"}
+    lines = "\n".join(
+        f"{i}. {p.name} · {format_xaf(p.price)}" for i, p in enumerate(products, 1)
+    )
+    conversation.state = ConversationState.DELETING_PRODUCT
+    _set_context(conversation)
+    db.commit()
+    _send_text(
+        db,
+        adapter,
+        conversation,
+        to,
+        t("delete_prompt", lang, lines=lines),
+    )
+    return {"ok": True, "action": "delete_prompt"}
 
 
 def _handle_media_message(
@@ -706,20 +1051,17 @@ def _handle_media_message(
     mime_type: str | None,
     caption: str,
 ) -> dict[str, Any]:
+    lang = _lang(conversation)
     if media_kind == "audio":
         conversation.state = ConversationState.ADDING_PRODUCT
-        conversation.context = {
-            **(conversation.context or {}),
-            "pending_voice_media_id": media_id,
-        }
+        _set_context(conversation, pending_voice_media_id=media_id)
         db.commit()
         _send_text(
             db,
             adapter,
             conversation,
             from_number,
-            "Voice note received. For now, reply with the product as text "
-            "(name + price in FCFA), or send a photo with a caption. Full voice understanding comes next.",
+            t("voice_pending", lang),
         )
         return {"ok": True, "action": "voice_received_pending_text"}
 
@@ -737,7 +1079,7 @@ def _handle_media_message(
                 adapter,
                 conversation,
                 from_number,
-                "I could not download that photo. Please send it again, or describe the product in text.",
+                t("image_failed", lang),
             )
             return {"ok": False, "action": "image_download_failed"}
         conversation.state = ConversationState.ADDING_PRODUCT
@@ -752,6 +1094,48 @@ def _handle_media_message(
         )
 
     return {"ok": False, "action": "unsupported_media"}
+
+
+def _begin_receipt(
+    db: Session,
+    adapter: WhatsAppAdapter,
+    store: Store,
+    conversation: Conversation,
+    from_number: str,
+    sale,
+) -> dict[str, Any]:
+    lang = _lang(conversation)
+    conversation.state = ConversationState.WAITING_RECEIPT_NAME
+    _set_context(conversation, pending_sale_id=str(sale.id), last_sale_id=str(sale.id))
+    db.commit()
+    item_label = (
+        "1 article" if sale.item_count == 1 else f"{sale.item_count} articles"
+        if lang != "en"
+        else ("1 item" if sale.item_count == 1 else f"{sale.item_count} items")
+    )
+    body = t(
+        "ask_receipt_name",
+        lang,
+        code=sale.public_code,
+        items=item_label,
+        total=format_xaf(sale.total_amount),
+    )
+    _send_buttons(
+        db,
+        adapter,
+        conversation,
+        from_number,
+        body,
+        [
+            {
+                "id": f"receipt_noname:{sale.public_code}",
+                "title": t("btn_no_name", lang)[:20],
+            },
+            {"id": "receipt_cancel", "title": t("btn_cancel", lang)[:20]},
+            {"id": "main_menu", "title": t("btn_menu", lang)[:20]},
+        ],
+    )
+    return {"ok": True, "action": "ask_receipt_name", "sale_code": sale.public_code}
 
 
 def handle_incoming_message(
@@ -787,6 +1171,35 @@ def handle_incoming_message(
     button = _normalize_button(button_id or "")
     content = text.strip()
     lowered = content.lower()
+    lang = _lang(conversation)
+
+    # Global language change / first-time language pick.
+    if (
+        conversation.state == ConversationState.CHOOSING_LANGUAGE
+        or button in {"lang_fr", "lang_en", "change_language"}
+        or lowered in {"langue", "language", "lang"}
+        or (not lang and button not in {"lang_fr", "lang_en"})
+    ):
+        # Allow mid-flow product confirm without forcing language again if already set.
+        if not lang or conversation.state == ConversationState.CHOOSING_LANGUAGE or button in {
+            "lang_fr",
+            "lang_en",
+            "change_language",
+        } or lowered in {"langue", "language", "lang"}:
+            lang_result = _handle_language_choice(
+                db, adapter, store, conversation, from_number, content, button
+            )
+            if lang_result is not None:
+                return lang_result
+
+    lang = _lang(conversation)
+    if not lang:
+        return _ask_language(db, adapter, conversation, from_number)
+
+    # Global menu escape hatch.
+    if button == "main_menu" or lowered in MENU_TRIGGERS:
+        _send_main_menu(db, adapter, store, conversation, from_number)
+        return {"ok": True, "action": "welcome"}
 
     if (
         store.status == StoreStatus.DRAFT
@@ -802,6 +1215,12 @@ def handle_incoming_message(
         return _handle_creating_store(
             db, adapter, store, conversation, from_number, content, button, lowered
         )
+
+    delete_result = _handle_delete_states(
+        db, adapter, store, conversation, from_number, content, button, lowered
+    )
+    if delete_result is not None:
+        return delete_result
 
     if media_id and media_kind in {"image", "audio"}:
         return _handle_media_message(
@@ -832,11 +1251,11 @@ def handle_incoming_message(
     if conversation.state == ConversationState.WAITING_RECEIPT_NAME:
         sale_id = (conversation.context or {}).get("pending_sale_id")
         sale = get_sale(db, uuid.UUID(sale_id)) if sale_id else None
-        if button == "receipt_cancel" or lowered in {"cancel", "annuler"}:
-            conversation.state = ConversationState.GENERAL_ASSISTANCE
-            conversation.context = {}
-            db.commit()
-            _send_text(db, adapter, conversation, from_number, "Recu annule.")
+        if button == "receipt_cancel" or lowered in CANCEL_TRIGGERS:
+            _send_text(
+                db, adapter, conversation, from_number, t("receipt_cancelled", lang)
+            )
+            _send_sales_menu(db, adapter, conversation, from_number)
             return {"ok": True, "action": "receipt_cancelled"}
 
         if sale and (
@@ -844,10 +1263,12 @@ def handle_incoming_message(
             or lowered in {"no name", "sans nom", "noname", "sans-nom"}
         ):
             _issue_receipt(db, adapter, store, conversation, from_number, sale, None)
+            _send_main_menu(db, adapter, store, conversation, from_number)
             return {"ok": True, "action": "receipt_sent", "receipt": True}
 
         if sale and content:
             _issue_receipt(db, adapter, store, conversation, from_number, sale, content)
+            _send_main_menu(db, adapter, store, conversation, from_number)
             return {"ok": True, "action": "receipt_sent", "receipt": True}
 
         _send_text(
@@ -855,9 +1276,96 @@ def handle_incoming_message(
             adapter,
             conversation,
             from_number,
-            "Ecrivez le nom du client, ou tapez Sans nom.",
+            t("receipt_name_prompt", lang),
         )
         return {"ok": True, "action": "awaiting_receipt_name"}
+
+    # Nested menus.
+    if button == "menu_products":
+        _send_products_menu(db, adapter, conversation, from_number)
+        return {"ok": True, "action": "products_menu"}
+
+    if button == "menu_sales":
+        _send_sales_menu(db, adapter, conversation, from_number)
+        return {"ok": True, "action": "sales_menu"}
+
+    if button == "menu_more":
+        _send_more_menu(db, adapter, conversation, from_number)
+        return {"ok": True, "action": "more_menu"}
+
+    if button == "help" or lowered in {"aide", "help", "?"}:
+        _send_text(db, adapter, conversation, from_number, t("help", lang))
+        _send_main_menu(db, adapter, store, conversation, from_number)
+        return {"ok": True, "action": "help"}
+
+    if button == "view_catalog" or lowered in {
+        "catalog",
+        "catalogue",
+        "ma boutique",
+        "my shop",
+    }:
+        _send_catalog(db, adapter, store=store, conversation=conversation, to=from_number)
+        _send_more_menu(db, adapter, conversation, from_number)
+        return {"ok": True, "action": "catalog_link", "url": shop_catalog_url(store)}
+
+    if button == "add_product" or lowered in {
+        "add a product",
+        "ajouter produit",
+        "add product",
+        "ajouter",
+    }:
+        conversation.state = ConversationState.ADDING_PRODUCT
+        _set_context(conversation)
+        db.commit()
+        _send_text(
+            db,
+            adapter,
+            conversation,
+            from_number,
+            t("add_product_prompt", lang),
+        )
+        return {"ok": True, "action": "add_product_prompt"}
+
+    if button == "list_products" or lowered in {
+        "my products",
+        "mes produits",
+        "liste",
+        "list",
+    }:
+        products = list_products(db, store.id)[:10]
+        if not products:
+            _send_text(db, adapter, conversation, from_number, t("no_products", lang))
+        else:
+            lines = "\n".join(
+                f"• {p.name}: {format_xaf(p.price)}" for p in products
+            )
+            _send_text(
+                db,
+                adapter,
+                conversation,
+                from_number,
+                t("products_list", lang, lines=lines),
+            )
+        _send_products_menu(db, adapter, conversation, from_number)
+        return {"ok": True, "action": "list_products"}
+
+    if button == "delete_product" or lowered in {
+        "supprimer",
+        "delete",
+        "supprimer produit",
+        "delete product",
+    }:
+        return _start_delete_flow(db, adapter, store, conversation, from_number)
+
+    if button == "record_sale_help" or lowered in {
+        "record a sale",
+        "nouvelle vente",
+        "new sale",
+    }:
+        conversation.state = ConversationState.RECORDING_SALE
+        db.commit()
+        _send_text(db, adapter, conversation, from_number, t("sale_help", lang))
+        return {"ok": True, "action": "sale_help"}
 
     receipt_text_match = re.match(
         r"^(?:receipt|recu|reçu|pdf)\s+([A-Za-z0-9\-]+)$",
@@ -872,100 +1380,34 @@ def handle_incoming_message(
         )
         sale = get_sale_by_code(db, store.id, code.strip())
         if not sale:
-            _send_text(db, adapter, conversation, from_number, "Vente introuvable.")
-            return {"ok": False, "action": "sale_not_found"}
-        conversation.state = ConversationState.WAITING_RECEIPT_NAME
-        conversation.context = {"pending_sale_id": str(sale.id)}
-        db.commit()
-        body, buttons = _ask_receipt_name(sale)
-        _send_buttons(db, adapter, conversation, from_number, body, buttons)
-        return {"ok": True, "action": "ask_receipt_name", "sale_code": sale.public_code}
-
-    if button == "view_catalog" or lowered in {
-        "catalog",
-        "catalogue",
-        "catalog link",
-        "lien catalogue",
-        "ma boutique",
-        "my shop",
-    }:
-        _send_catalog(
-            db,
-            adapter,
-            conversation,
-            store,
-            from_number,
-            intro=f"Public catalog for {store.name}.",
-        )
-        return {"ok": True, "action": "catalog_link", "url": shop_catalog_url(store)}
-
-    if button == "add_product" or lowered in {"add a product", "ajouter produit", "add product"}:
-        conversation.state = ConversationState.ADDING_PRODUCT
-        conversation.context = {}
-        db.commit()
-        _send_text(
-            db,
-            adapter,
-            conversation,
-            from_number,
-            "Send product text, a photo with caption, or a voice note then the price in text.\n"
-            "Example: Robe rouge 12000 FCFA, 5 pieces.",
-        )
-        return {"ok": True, "action": "add_product_prompt"}
-
-    if button == "more_actions" or lowered in {"more actions", "plus d'actions"}:
-        _send_buttons(
-            db,
-            adapter,
-            conversation,
-            from_number,
-            "What do you want to do?",
-            [
-                {"id": "add_product", "title": "Add a product"},
-                {"id": "view_catalog", "title": "Catalog link"},
-                {"id": "list_products", "title": "My products"},
-            ],
-        )
-        return {"ok": True, "action": "more_actions"}
-
-    if button == "record_sale_help" or lowered in {"record a sale", "vente", "nouvelle vente"}:
-        _send_text(
-            db,
-            adapter,
-            conversation,
-            from_number,
-            "Pour enregistrer une vente : vente BBC 9000\nOu : vente Robe 2 12000\n"
-            "Puis tapez Recu PDF pour recevoir le document.",
-        )
-        return {"ok": True, "action": "sale_help"}
-
-    if button == "list_products" or lowered in {"my products", "mes produits", "show my products"}:
-        products = db.scalars(
-            select(Product).where(Product.store_id == store.id).limit(10)
-        ).all()
-        if not products:
-            _send_text(db, adapter, conversation, from_number, "No products yet.")
-        else:
-            lines = [f"• {p.name}: {format_xaf(p.price)}" for p in products]
             _send_text(
-                db,
-                adapter,
-                conversation,
-                from_number,
-                "Your products:\n" + "\n".join(lines),
+                db, adapter, conversation, from_number, t("sale_not_found", lang)
             )
-        _send_catalog(
-            db,
-            adapter,
-            conversation,
-            store,
-            from_number,
-            intro="Open the full catalog online.",
-        )
-        return {"ok": True, "action": "list_products"}
+            return {"ok": False, "action": "sale_not_found"}
+        return _begin_receipt(db, adapter, store, conversation, from_number, sale)
 
-    if content.lower().startswith(("vente ", "vendre ", "sale ", "sell ")):
-        parsed = _parse_sale_text(content)
+    if button == "receipt_last":
+        from app.services.sales import list_sales
+
+        sale_id = (conversation.context or {}).get("last_sale_id")
+        sale = get_sale(db, uuid.UUID(sale_id)) if sale_id else None
+        if not sale:
+            sales = list_sales(db, store.id, limit=1)
+            sale = sales[0] if sales else None
+        if not sale:
+            _send_text(db, adapter, conversation, from_number, t("no_last_sale", lang))
+            _send_sales_menu(db, adapter, conversation, from_number)
+            return {"ok": False, "action": "no_last_sale"}
+        return _begin_receipt(db, adapter, store, conversation, from_number, sale)
+
+    if content.lower().startswith(("vente ", "vendre ", "sale ", "sell ")) or (
+        conversation.state == ConversationState.RECORDING_SALE and content
+    ):
+        parsed = _parse_sale_text(
+            content
+            if content.lower().startswith(("vente ", "vendre ", "sale ", "sell "))
+            else f"vente {content}"
+        )
         if parsed:
             product = match_product_by_name(db, store.id, parsed["name"])
             item = {
@@ -975,11 +1417,29 @@ def handle_incoming_message(
                 "product_id": str(product.id) if product else None,
             }
             sale = create_sale(db, store, [item])
+            _set_context(conversation, last_sale_id=str(sale.id))
             conversation.state = ConversationState.GENERAL_ASSISTANCE
-            conversation.context = {"last_sale_id": str(sale.id)}
             db.commit()
-            body, buttons = _sale_recorded_reply(sale)
-            _send_buttons(db, adapter, conversation, from_number, body, buttons)
+            _send_buttons(
+                db,
+                adapter,
+                conversation,
+                from_number,
+                t(
+                    "sale_recorded",
+                    lang,
+                    code=sale.public_code,
+                    total=format_xaf(sale.total_amount),
+                ),
+                [
+                    {
+                        "id": f"receipt:{sale.public_code}",
+                        "title": t("btn_receipt", lang)[:20],
+                    },
+                    {"id": "menu_sales", "title": t("btn_sales", lang)[:20]},
+                    {"id": "main_menu", "title": t("btn_menu", lang)[:20]},
+                ],
+            )
             return {
                 "ok": True,
                 "action": "sale_recorded",
@@ -987,36 +1447,13 @@ def handle_incoming_message(
                 "total": str(sale.total_amount),
             }
 
-    if lowered in {"hello", "hi", "bonjour", "salut", "start"}:
-        _send_buttons(
-            db,
-            adapter,
-            conversation,
-            from_number,
-            "Bienvenue sur Komero. Ajoutez des produits (texte/photo), enregistrez des ventes, et envoyez des recus PDF.",
-            [
-                {"id": "add_product", "title": "Add a product"},
-                {"id": "view_catalog", "title": "Catalog link"},
-                {"id": "record_sale_help", "title": "Record a sale"},
-            ],
-        )
-        return {"ok": True, "action": "welcome"}
-
-    # Natural language product intent without pressing the button.
+    # Free-form product text only when it looks intentional.
     if any(
         token in lowered
         for token in ("produit", "product", "ajouter", "j'ai", "stock", "fcfa", "xaf")
     ) and not lowered.startswith(("vente ", "vendre ", "sale ", "sell ")):
         return _start_product_draft(db, adapter, conversation, from_number, content)
 
-    _send_text(
-        db,
-        adapter,
-        conversation,
-        from_number,
-        "Je n'ai pas compris.\n"
-        "Essayez : vente BBC 9000\n"
-        "Ou envoyez une photo produit avec le prix en legende\n"
-        "Ou envoyez bonjour pour le menu.",
-    )
+    _send_text(db, adapter, conversation, from_number, t("fallback", lang))
+    _send_main_menu(db, adapter, store, conversation, from_number)
     return {"ok": True, "action": "fallback"}
