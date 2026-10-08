@@ -3,6 +3,7 @@ from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
@@ -27,10 +28,11 @@ def verify_webhook(
     hub_mode: str | None = Query(default=None, alias="hub.mode"),
     hub_verify_token: str | None = Query(default=None, alias="hub.verify_token"),
     hub_challenge: str | None = Query(default=None, alias="hub.challenge"),
-) -> Any:
+) -> PlainTextResponse:
     settings = get_settings()
     if hub_mode == "subscribe" and hub_verify_token == settings.whatsapp_verify_token:
-        return int(hub_challenge or 0)
+        # Meta expects the raw challenge echoed as plain text.
+        return PlainTextResponse(content=str(hub_challenge or ""), status_code=200)
     raise HTTPException(status_code=403, detail="Webhook verification failed")
 
 
