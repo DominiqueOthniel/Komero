@@ -56,6 +56,9 @@ class SimulateMessageRequest(BaseModel):
     from_number: str = Field(min_length=8, max_length=40)
     text: str = ""
     button_id: str | None = None
+    media_id: str | None = None
+    media_kind: str | None = None
+    mime_type: str | None = None
 
 
 @router.post("/ai/extract-product")
@@ -95,6 +98,9 @@ def simulate_inbound(
         from_number=payload.from_number,
         text=payload.text,
         button_id=payload.button_id,
+        media_id=payload.media_id,
+        media_kind=payload.media_kind,
+        mime_type=payload.mime_type,
     )
     outbound = []
     if isinstance(adapter, MockWhatsAppAdapter):

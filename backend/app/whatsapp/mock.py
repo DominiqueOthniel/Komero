@@ -1,8 +1,10 @@
+from pathlib import Path
 from typing import Any
 
 from app.whatsapp.base import WhatsAppAdapter
 
 _SENT: list[dict[str, Any]] = []
+MEDIA_DIR = Path(__file__).resolve().parents[2] / "storage" / "inbound"
 
 
 class MockWhatsAppAdapter(WhatsAppAdapter):
@@ -29,6 +31,20 @@ class MockWhatsAppAdapter(WhatsAppAdapter):
         self.sent.append(payload)
         return payload
 
+    def send_cta_url(
+        self, to: str, body: str, *, button_text: str, url: str
+    ) -> dict[str, Any]:
+        payload = {
+            "to": to,
+            "type": "cta_url",
+            "body": body,
+            "button_text": button_text,
+            "url": url,
+            "id": f"mock-{len(self.sent)+1}",
+        }
+        self.sent.append(payload)
+        return payload
+
     def send_document(
         self,
         to: str,
@@ -47,3 +63,10 @@ class MockWhatsAppAdapter(WhatsAppAdapter):
         }
         self.sent.append(payload)
         return payload
+
+    def download_media(self, media_id: str, *, suffix: str = ".bin") -> str:
+        MEDIA_DIR.mkdir(parents=True, exist_ok=True)
+        path = MEDIA_DIR / f"{media_id}{suffix}"
+        if not path.exists():
+            path.write_bytes(b"mock-media")
+        return str(path)

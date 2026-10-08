@@ -8,3 +8,7 @@ __pycache__/
 storage/receipts/*.pdf
 storage/receipts/*.png
 !storage/receipts/.gitkeep
+storage/products/*
+!storage/products/.gitkeep
+storage/inbound/*
+!storage/inbound/.gitkeep
