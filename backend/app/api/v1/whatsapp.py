@@ -1,13 +1,17 @@
+from datetime import datetime
 from typing import Any
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from pydantic import BaseModel, Field
-from sqlalchemy.orm import Session
+from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy import select
+from sqlalchemy.orm import Session, selectinload
 
 from app.ai.factory import get_ai_provider
 from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.deps import get_current_user, get_owned_store
+from app.models.conversation import Conversation, Message
 from app.models.store import Store
 from app.models.user import User
 from app.services.conversation_engine import handle_incoming_message
@@ -80,6 +84,8 @@ def simulate_inbound(
 ) -> dict[str, Any]:
     """Local/dev helper that drives the conversation engine without Meta."""
     adapter = get_whatsapp_adapter()
+    if isinstance(adapter, MockWhatsAppAdapter):
+        adapter.sent.clear()
     result = handle_incoming_message(
         db,
         adapter,
@@ -90,5 +96,44 @@ def simulate_inbound(
     )
     outbound = []
     if isinstance(adapter, MockWhatsAppAdapter):
-        outbound = adapter.sent[-5:]
+        outbound = list(adapter.sent)
     return {"result": result, "outbound": outbound}
+
+
+class MessageOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    direction: str
+    message_type: str
+    content: str | None
+    created_at: datetime
+
+
+class ConversationOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    whatsapp_number: str
+    status: str
+    state: str
+    updated_at: datetime
+    messages: list[MessageOut] = []
+
+
+@router.get("/stores/{store_id}/conversations", response_model=list[ConversationOut])
+def list_conversations(
+    store: Store = Depends(get_owned_store),
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+    limit: int = Query(default=20, ge=1, le=100),
+) -> list[Conversation]:
+    return list(
+        db.scalars(
+            select(Conversation)
+            .where(Conversation.store_id == store.id)
+            .options(selectinload(Conversation.messages))
+            .order_by(Conversation.updated_at.desc())
+            .limit(limit)
+        )
+    )
