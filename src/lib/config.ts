@@ -1,6 +1,12 @@
+const DEFAULT_WHATSAPP_NUMBER = "15556535563";
+const DEFAULT_WHATSAPP_TEXT =
+  "Bonjour Komero, je veux creer ma boutique";
+
 export const siteConfig = {
   name: "Komero",
+  whatsappNumber:
+    process.env.NEXT_PUBLIC_WHATSAPP_NUMBER ?? DEFAULT_WHATSAPP_NUMBER,
   whatsappUrl:
     process.env.NEXT_PUBLIC_WHATSAPP_URL ??
-    "https://wa.me/?text=Hello%20Komero%2C%20I%20want%20to%20create%20my%20shop",
+    `https://wa.me/${DEFAULT_WHATSAPP_NUMBER}?text=${encodeURIComponent(DEFAULT_WHATSAPP_TEXT)}`,
 } as const;
