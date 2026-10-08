@@ -1,4 +1,7 @@
+from pathlib import Path
+
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
@@ -9,6 +12,9 @@ from app.schemas.product import CategoryOut, ProductOut
 from app.schemas.store import StoreOut
 
 router = APIRouter(prefix="/public", tags=["public"])
+
+MEDIA_ROOT = Path(__file__).resolve().parents[3] / "storage"
+ALLOWED_MEDIA_KINDS = {"products", "inbound", "receipts"}
 
 
 @router.get("/shops/{slug}", response_model=StoreOut)
@@ -82,3 +88,15 @@ def get_public_categories(slug: str, db: Session = Depends(get_db)) -> list[Cate
     return list(
         db.scalars(select(Category).where(Category.store_id == store.id).order_by(Category.name))
     )
+
+
+@router.get("/media/{kind}/{filename}")
+def get_public_media(kind: str, filename: str) -> FileResponse:
+    if kind not in ALLOWED_MEDIA_KINDS:
+        raise HTTPException(status_code=404, detail="Media not found")
+    safe_name = Path(filename).name
+    path = (MEDIA_ROOT / kind / safe_name).resolve()
+    root = (MEDIA_ROOT / kind).resolve()
+    if not str(path).startswith(str(root)) or not path.exists() or not path.is_file():
+        raise HTTPException(status_code=404, detail="Media not found")
+    return FileResponse(path)

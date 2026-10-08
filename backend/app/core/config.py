@@ -20,6 +20,7 @@ class Settings(BaseSettings):
         "http://localhost:3000,http://127.0.0.1:3000,https://komero.netlify.app"
     )
     frontend_url: str = "https://komero.netlify.app"
+    public_api_url: str = "https://komero-production.up.railway.app"
     currency_default: str = "XAF"
     token_encryption_key: str = "dev-token-encryption-key-change-me"
 

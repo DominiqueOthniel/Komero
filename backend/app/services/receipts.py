@@ -106,7 +106,7 @@ def build_receipt_pdf(
     if phone and not phone.startswith("+"):
         phone = f"+{phone}"
 
-    sale_date = sale.created_at.astimezone(timezone.utc).strftime("%B %d, %Y")
+    sale_date = sale.created_at.astimezone(timezone.utc).strftime("%d/%m/%Y")
     customer = receipt.customer_name or "Sans nom"
 
     story = []
@@ -115,7 +115,7 @@ def build_receipt_pdf(
             [
                 Paragraph(store.name, title),
                 Paragraph(
-                    f"<b>Receipt</b><br/>{receipt.number}",
+                    f"<b>Recu</b><br/>{receipt.number}",
                     ParagraphStyle("RightHead", parent=body, alignment=2, fontSize=12),
                 ),
             ]
@@ -125,21 +125,20 @@ def build_receipt_pdf(
     header.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP")]))
     story.append(header)
     if phone:
-        story.append(Paragraph(f"Tel.: {phone}", body))
+        story.append(Paragraph(f"Tel. : {phone}", body))
     story.append(Spacer(1, 8 * mm))
 
     for label, value in [
         ("Date", sale_date),
-        ("Date of sale", sale_date),
-        ("Sale ID", sale.public_code),
-        ("Customer", customer),
+        ("Code vente", sale.public_code),
+        ("Client", customer),
     ]:
         story.append(Paragraph(label, meta_label))
         story.append(Paragraph(value, meta_value))
 
     story.append(Spacer(1, 6 * mm))
 
-    table_data = [["Item", "Qty", "Unit price", "Amount"]]
+    table_data = [["Article", "Qte", "Prix unit.", "Montant"]]
     for item in sale.items:
         table_data.append(
             [
@@ -175,7 +174,7 @@ def build_receipt_pdf(
             [
                 qr_img,
                 Paragraph(
-                    "To check this document, scan this code or open the address below.<br/><br/>"
+                    "Pour verifier ce document, scannez ce code ou ouvrez le lien ci-dessous.<br/><br/>"
                     f'<font color="#8B5A2B">{verify_url}</font>',
                     body,
                 ),
@@ -187,7 +186,7 @@ def build_receipt_pdf(
     story.append(verify_block)
     story.append(Spacer(1, 14 * mm))
     story.append(
-        Paragraph("Receipt generated with Komero · komero.app", footer)
+        Paragraph("Recu genere avec Komero · komero.app", footer)
     )
 
     doc.build(story)
@@ -203,7 +202,24 @@ def create_receipt(
     customer_name: str | None,
 ) -> Receipt:
     existing = db.scalar(select(Receipt).where(Receipt.sale_id == sale.id))
+    sale_full = db.scalar(
+        select(Sale).options(joinedload(Sale.items)).where(Sale.id == sale.id)
+    )
+    assert sale_full is not None
+
     if existing:
+        if customer_name and not existing.customer_name:
+            existing.customer_name = customer_name
+            sale.customer_name = customer_name
+            db.commit()
+            db.refresh(existing)
+        pdf_path = Path(existing.pdf_path or "")
+        if not pdf_path.exists():
+            filename = f"Receipt-{existing.number}.pdf"
+            pdf_path = STORAGE_DIR / filename
+            existing.pdf_path = str(pdf_path)
+            db.commit()
+            build_receipt_pdf(store, sale_full, existing, pdf_path)
         return existing
 
     number = next_receipt_number(db)
@@ -224,10 +240,6 @@ def create_receipt(
     db.commit()
     db.refresh(receipt)
 
-    sale_full = db.scalar(
-        select(Sale).options(joinedload(Sale.items)).where(Sale.id == sale.id)
-    )
-    assert sale_full is not None
     build_receipt_pdf(store, sale_full, receipt, pdf_path)
     return receipt
 

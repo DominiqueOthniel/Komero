@@ -1,7 +1,9 @@
 import json
 import re
+import shutil
 import uuid
 from decimal import Decimal, InvalidOperation
+from pathlib import Path
 from typing import Any
 
 from sqlalchemy import select
@@ -20,7 +22,8 @@ from app.models.conversation import (
 from app.models.product import Product, ProductStatus
 from app.models.store import Store, StoreStatus
 from app.models.whatsapp import WhatsAppConnection
-from app.schemas.product import ProductCreate, ProductVariantIn
+from app.schemas.product import ProductCreate, ProductImageIn, ProductVariantIn
+from app.services.catalog import product_page_url, public_media_url, shop_catalog_url
 from app.services.money import format_xaf
 from app.services.onboarding import activate_store_with_name, find_store_by_merchant_phone
 from app.services.products import create_product
@@ -32,6 +35,8 @@ from app.services.sales import (
     match_product_by_name,
 )
 from app.whatsapp.base import WhatsAppAdapter
+
+PRODUCT_MEDIA_DIR = Path(__file__).resolve().parents[2] / "storage" / "products"
 
 SALE_PATTERNS = [
     re.compile(
@@ -175,6 +180,33 @@ def _send_buttons(
     )
 
 
+def _send_catalog(
+    db: Session,
+    adapter: WhatsAppAdapter,
+    conversation: Conversation,
+    store: Store,
+    to: str,
+    intro: str | None = None,
+) -> None:
+    url = shop_catalog_url(store)
+    body = intro or f"Catalog for {store.name}."
+    result = adapter.send_cta_url(
+        to,
+        body,
+        button_text="Open catalog",
+        url=url,
+    )
+    _store_message(
+        db,
+        conversation,
+        MessageDirection.OUTBOUND,
+        f"{body}\n{url}",
+        MessageType.SYSTEM,
+        whatsapp_message_id=str(result.get("id") or ""),
+        media_url=url,
+    )
+
+
 def identify_store(
     db: Session,
     phone_number_id: str | None,
@@ -206,9 +238,9 @@ def identify_store(
 
 
 def _sale_recorded_reply(sale) -> tuple[str, list[dict[str, str]]]:
-    body = f"Sale recorded: {sale.public_code}."
+    body = f"Vente enregistree : {sale.public_code}."
     buttons = [
-        {"id": f"receipt:{sale.public_code}", "title": f"Receipt {sale.public_code}"[:20]},
+        {"id": f"receipt:{sale.public_code}", "title": "Recu PDF"},
         {"id": "add_product", "title": "Add a product"},
         {"id": "more_actions", "title": "More actions"},
     ]
@@ -216,14 +248,14 @@ def _sale_recorded_reply(sale) -> tuple[str, list[dict[str, str]]]:
 
 
 def _ask_receipt_name(sale) -> tuple[str, list[dict[str, str]]]:
-    item_label = "1 item" if sale.item_count == 1 else f"{sale.item_count} items"
+    item_label = "1 article" if sale.item_count == 1 else f"{sale.item_count} articles"
     body = (
-        f"Receipt for sale {sale.public_code}: {item_label}, {format_xaf(sale.total_amount)}. "
-        "In whose name? Write the customer's name, or tap 'No name'."
+        f"Recu pour la vente {sale.public_code} : {item_label}, {format_xaf(sale.total_amount)}. "
+        "Au nom de qui ? Ecrivez le nom du client, ou tapez Sans nom."
     )
     buttons = [
-        {"id": f"receipt_noname:{sale.public_code}", "title": "No name"},
-        {"id": "receipt_cancel", "title": "Cancel"},
+        {"id": f"receipt_noname:{sale.public_code}", "title": "Sans nom"},
+        {"id": "receipt_cancel", "title": "Annuler"},
     ]
     return body, buttons
 
@@ -238,25 +270,69 @@ def _issue_receipt(
     customer_name: str | None,
 ) -> None:
     receipt = create_receipt(db, store, sale, customer_name)
-    filename = f"Receipt-{receipt.number}.pdf"
-    caption = f"Here is receipt {receipt.number}. Forward it to your customer."
-    result = adapter.send_document(
-        to,
-        document_path=receipt.pdf_path or "",
-        filename=filename,
-        caption=caption,
+    pdf_path = Path(receipt.pdf_path or "")
+    if not pdf_path.exists():
+        from app.models.sale import Sale
+        from app.services.receipts import build_receipt_pdf
+        from sqlalchemy.orm import joinedload
+
+        sale_full = db.scalar(
+            select(Sale).options(joinedload(Sale.items)).where(Sale.id == sale.id)
+        )
+        if sale_full:
+            pdf_path = Path(__file__).resolve().parents[2] / "storage" / "receipts" / (
+                f"Receipt-{receipt.number}.pdf"
+            )
+            pdf_path.parent.mkdir(parents=True, exist_ok=True)
+            build_receipt_pdf(store, sale_full, receipt, pdf_path)
+            receipt.pdf_path = str(pdf_path)
+            db.commit()
+
+    verify = verification_url(receipt.number, receipt.verification_key)
+    filename = f"Recu-{receipt.number}.pdf"
+    caption = (
+        f"Recu {receipt.number} · {format_xaf(sale.total_amount)}. "
+        f"Verification : {verify}"
     )
-    _store_message(
+    sent_pdf = False
+    if pdf_path.exists():
+        try:
+            result = adapter.send_document(
+                to,
+                document_path=str(pdf_path),
+                filename=filename,
+                caption=caption,
+            )
+            _store_message(
+                db,
+                conversation,
+                MessageDirection.OUTBOUND,
+                caption,
+                MessageType.DOCUMENT,
+                whatsapp_message_id=str(result.get("id") or ""),
+                media_url=verify,
+            )
+            sent_pdf = True
+        except Exception:
+            sent_pdf = False
+
+    if not sent_pdf:
+        _send_text(
+            db,
+            adapter,
+            conversation,
+            to,
+            f"Recu {receipt.number} pret en ligne (PDF) : {verify}",
+        )
+    _send_text(
         db,
+        adapter,
         conversation,
-        MessageDirection.OUTBOUND,
-        caption,
-        MessageType.SYSTEM,
-        whatsapp_message_id=str(result.get("id") or ""),
-        media_url=verification_url(receipt.number, receipt.verification_key),
+        to,
+        f"Partagez ce lien de verification avec votre client :\n{verify}",
     )
     conversation.state = ConversationState.GENERAL_ASSISTANCE
-    conversation.context = {}
+    conversation.context = {"last_receipt_number": receipt.number}
     db.commit()
 
 
@@ -312,41 +388,64 @@ def _start_product_draft(
     conversation: Conversation,
     to: str,
     text: str,
+    *,
+    image_path: str | None = None,
 ) -> dict[str, Any]:
     provider = get_ai_provider()
-    draft = provider.extract_product(text, language="fr")
-    _log_ai_action(db, conversation, AIActionType.EXTRACT_PRODUCT, text, draft)
+    if image_path:
+        draft = provider.extract_product_from_image(
+            image_path=image_path, caption=text, language="fr"
+        )
+    else:
+        draft = provider.extract_product(text, language="fr")
+    _log_ai_action(db, conversation, AIActionType.EXTRACT_PRODUCT, text or image_path or "", draft)
 
     if draft.get("missing_fields"):
         conversation.state = ConversationState.ADDING_PRODUCT
-        conversation.context = {"pending_product": draft, "raw_text": text}
+        conversation.context = {
+            "pending_product": draft,
+            "raw_text": text,
+            "image_path": image_path or draft.get("image_path"),
+        }
         db.commit()
         missing = ", ".join(draft["missing_fields"])
+        hint = (
+            "Send a photo with a caption, or text like: Robe wax 15000 FCFA, 8 pieces."
+            if image_path
+            else "Example: Robe wax 15000 FCFA, 8 pieces. You can also send a product photo."
+        )
         _send_text(
             db,
             adapter,
             conversation,
             to,
-            f"I need more details ({missing}). Example: Robe wax 15000 FCFA, 8 pieces.",
+            f"I need more details ({missing}). {hint}",
         )
         return {"ok": True, "action": "product_missing_fields", "draft": draft}
 
     conversation.state = ConversationState.WAITING_PRODUCT_CONFIRMATION
-    conversation.context = {"pending_product": draft, "raw_text": text}
+    conversation.context = {
+        "pending_product": draft,
+        "raw_text": text,
+        "image_path": image_path or draft.get("image_path"),
+    }
     db.commit()
+    body = _format_product_draft(draft)
+    if image_path or draft.get("image_path"):
+        body = "Photo received.\n" + body
     _send_buttons(
         db,
         adapter,
         conversation,
         to,
-        _format_product_draft(draft),
+        body,
         _product_confirm_buttons(),
     )
     return {"ok": True, "action": "product_confirm_prompt", "draft": draft}
 
 
 def _persist_product_from_draft(
-    db: Session, store: Store, draft: dict[str, Any]
+    db: Session, store: Store, draft: dict[str, Any], image_path: str | None = None
 ) -> Product:
     variants = [
         ProductVariantIn(
@@ -358,6 +457,20 @@ def _persist_product_from_draft(
         for item in (draft.get("variants") or [])
         if item.get("value")
     ]
+    images: list[ProductImageIn] = []
+    source_image = image_path or draft.get("image_path")
+    if source_image and Path(source_image).exists():
+        PRODUCT_MEDIA_DIR.mkdir(parents=True, exist_ok=True)
+        suffix = Path(source_image).suffix or ".jpg"
+        filename = f"{uuid.uuid4().hex}{suffix}"
+        dest = PRODUCT_MEDIA_DIR / filename
+        shutil.copy2(source_image, dest)
+        images.append(
+            ProductImageIn(
+                image_url=public_media_url("products", filename),
+                position=0,
+            )
+        )
     payload = ProductCreate(
         name=str(draft["name"]),
         description=draft.get("description"),
@@ -365,6 +478,7 @@ def _persist_product_from_draft(
         stock_quantity=int(draft["stock"]) if draft.get("stock") is not None else 0,
         status=ProductStatus.PUBLISHED,
         variants=variants,
+        images=images,
     )
     return create_product(db, store.id, payload)
 
@@ -422,8 +536,16 @@ def _handle_creating_store(
         [
             {"id": "add_product", "title": "Add a product"},
             {"id": "record_sale_help", "title": "Record a sale"},
-            {"id": "list_products", "title": "My products"},
+            {"id": "view_catalog", "title": "Catalog link"},
         ],
+    )
+    _send_catalog(
+        db,
+        adapter,
+        conversation,
+        store,
+        from_number,
+        intro=f"Here is your public catalog for {store.name}.",
     )
     return {"ok": True, "action": "store_created", "store": store.name}
 
@@ -437,6 +559,8 @@ def _handle_product_states(
     content: str,
     button: str,
     lowered: str,
+    *,
+    image_path: str | None = None,
 ) -> dict[str, Any] | None:
     state = conversation.state
 
@@ -447,19 +571,32 @@ def _handle_product_states(
             db.commit()
             _send_text(db, adapter, conversation, from_number, "Product creation cancelled.")
             return {"ok": True, "action": "product_cancelled"}
+        if image_path:
+            return _start_product_draft(
+                db, adapter, conversation, from_number, content, image_path=image_path
+            )
         if not content:
             _send_text(
                 db,
                 adapter,
                 conversation,
                 from_number,
-                "Send the product as text, for example: Robe rouge 12000 FCFA, 5 pieces.",
+                "Send product text or a photo with caption. Example: Robe rouge 12000 FCFA, 5 pieces.",
             )
             return {"ok": True, "action": "add_product_prompt"}
-        return _start_product_draft(db, adapter, conversation, from_number, content)
+        prior_image = (conversation.context or {}).get("image_path")
+        return _start_product_draft(
+            db,
+            adapter,
+            conversation,
+            from_number,
+            content,
+            image_path=prior_image,
+        )
 
     if state == ConversationState.WAITING_PRODUCT_CONFIRMATION:
         draft = (conversation.context or {}).get("pending_product") or {}
+        image_path = image_path or (conversation.context or {}).get("image_path")
         if button == "product_cancel" or lowered in {"cancel", "annuler"}:
             conversation.state = ConversationState.GENERAL_ASSISTANCE
             conversation.context = {}
@@ -475,7 +612,7 @@ def _handle_product_states(
                 adapter,
                 conversation,
                 from_number,
-                "Send the corrected product details in one message.",
+                "Send the corrected details as text, or a new photo with caption.",
             )
             return {"ok": True, "action": "product_edit_prompt"}
 
@@ -491,7 +628,7 @@ def _handle_product_states(
                     "Draft incomplete. Send the product again with name and price.",
                 )
                 return {"ok": False, "action": "product_incomplete"}
-            product = _persist_product_from_draft(db, store, draft)
+            product = _persist_product_from_draft(db, store, draft, image_path=image_path)
             conversation.state = ConversationState.GENERAL_ASSISTANCE
             conversation.context = {"last_product_id": str(product.id)}
             db.commit()
@@ -503,9 +640,17 @@ def _handle_product_states(
                 f"Product published: {product.name} ({format_xaf(product.price)}).",
                 [
                     {"id": "add_product", "title": "Add another"},
-                    {"id": "list_products", "title": "My products"},
+                    {"id": "view_catalog", "title": "Catalog link"},
                     {"id": "record_sale_help", "title": "Record a sale"},
                 ],
+            )
+            _send_catalog(
+                db,
+                adapter,
+                conversation,
+                store,
+                from_number,
+                intro=f"Catalog updated. Product page: {product_page_url(store, str(product.id))}",
             )
             return {
                 "ok": True,
@@ -531,6 +676,10 @@ def _handle_product_states(
             db.commit()
             _send_text(db, adapter, conversation, from_number, "Product creation cancelled.")
             return {"ok": True, "action": "product_cancelled"}
+        if image_path:
+            return _start_product_draft(
+                db, adapter, conversation, from_number, content, image_path=image_path
+            )
         if not content:
             _send_text(
                 db,
@@ -545,6 +694,66 @@ def _handle_product_states(
     return None
 
 
+def _handle_media_message(
+    db: Session,
+    adapter: WhatsAppAdapter,
+    store: Store,
+    conversation: Conversation,
+    from_number: str,
+    *,
+    media_id: str,
+    media_kind: str,
+    mime_type: str | None,
+    caption: str,
+) -> dict[str, Any]:
+    if media_kind == "audio":
+        conversation.state = ConversationState.ADDING_PRODUCT
+        conversation.context = {
+            **(conversation.context or {}),
+            "pending_voice_media_id": media_id,
+        }
+        db.commit()
+        _send_text(
+            db,
+            adapter,
+            conversation,
+            from_number,
+            "Voice note received. For now, reply with the product as text "
+            "(name + price in FCFA), or send a photo with a caption. Full voice understanding comes next.",
+        )
+        return {"ok": True, "action": "voice_received_pending_text"}
+
+    if media_kind == "image":
+        suffix = ".jpg"
+        if mime_type and "png" in mime_type:
+            suffix = ".png"
+        elif mime_type and "webp" in mime_type:
+            suffix = ".webp"
+        try:
+            image_path = adapter.download_media(media_id, suffix=suffix)
+        except Exception:
+            _send_text(
+                db,
+                adapter,
+                conversation,
+                from_number,
+                "I could not download that photo. Please send it again, or describe the product in text.",
+            )
+            return {"ok": False, "action": "image_download_failed"}
+        conversation.state = ConversationState.ADDING_PRODUCT
+        db.commit()
+        return _start_product_draft(
+            db,
+            adapter,
+            conversation,
+            from_number,
+            caption,
+            image_path=image_path,
+        )
+
+    return {"ok": False, "action": "unsupported_media"}
+
+
 def handle_incoming_message(
     db: Session,
     adapter: WhatsAppAdapter,
@@ -554,16 +763,25 @@ def handle_incoming_message(
     text: str,
     button_id: str | None = None,
     whatsapp_message_id: str | None = None,
+    media_id: str | None = None,
+    media_kind: str | None = None,
+    mime_type: str | None = None,
 ) -> dict[str, Any]:
     conversation = _get_or_create_conversation(db, store, from_number)
-    inbound = text or button_id or ""
+    inbound = text or button_id or media_kind or ""
+    message_type = MessageType.BUTTON if button_id else MessageType.TEXT
+    if media_kind == "image":
+        message_type = MessageType.IMAGE
+    elif media_kind == "audio":
+        message_type = MessageType.AUDIO
     _store_message(
         db,
         conversation,
         MessageDirection.INBOUND,
         inbound,
-        MessageType.BUTTON if button_id else MessageType.TEXT,
+        message_type,
         whatsapp_message_id=whatsapp_message_id,
+        media_url=media_id,
     )
 
     button = _normalize_button(button_id or "")
@@ -585,8 +803,28 @@ def handle_incoming_message(
             db, adapter, store, conversation, from_number, content, button, lowered
         )
 
+    if media_id and media_kind in {"image", "audio"}:
+        return _handle_media_message(
+            db,
+            adapter,
+            store,
+            conversation,
+            from_number,
+            media_id=media_id,
+            media_kind=media_kind,
+            mime_type=mime_type,
+            caption=content,
+        )
+
     product_result = _handle_product_states(
-        db, adapter, store, conversation, from_number, content, button, lowered
+        db,
+        adapter,
+        store,
+        conversation,
+        from_number,
+        content,
+        button,
+        lowered,
     )
     if product_result is not None:
         return product_result
@@ -598,12 +836,12 @@ def handle_incoming_message(
             conversation.state = ConversationState.GENERAL_ASSISTANCE
             conversation.context = {}
             db.commit()
-            _send_text(db, adapter, conversation, from_number, "Receipt cancelled.")
+            _send_text(db, adapter, conversation, from_number, "Recu annule.")
             return {"ok": True, "action": "receipt_cancelled"}
 
         if sale and (
             button.startswith("receipt_noname:")
-            or lowered in {"no name", "sans nom", "noname"}
+            or lowered in {"no name", "sans nom", "noname", "sans-nom"}
         ):
             _issue_receipt(db, adapter, store, conversation, from_number, sale, None)
             return {"ok": True, "action": "receipt_sent", "receipt": True}
@@ -617,15 +855,24 @@ def handle_incoming_message(
             adapter,
             conversation,
             from_number,
-            "Write the customer name, or tap No name.",
+            "Ecrivez le nom du client, ou tapez Sans nom.",
         )
         return {"ok": True, "action": "awaiting_receipt_name"}
 
-    if button.startswith("receipt:") or lowered.startswith("receipt "):
-        code = button.split(":", 1)[1] if ":" in button else content.split(" ", 1)[-1]
+    receipt_text_match = re.match(
+        r"^(?:receipt|recu|reçu|pdf)\s+([A-Za-z0-9\-]+)$",
+        content,
+        flags=re.IGNORECASE,
+    )
+    if button.startswith("receipt:") or receipt_text_match:
+        code = (
+            button.split(":", 1)[1]
+            if button.startswith("receipt:")
+            else receipt_text_match.group(1)
+        )
         sale = get_sale_by_code(db, store.id, code.strip())
         if not sale:
-            _send_text(db, adapter, conversation, from_number, "Sale not found.")
+            _send_text(db, adapter, conversation, from_number, "Vente introuvable.")
             return {"ok": False, "action": "sale_not_found"}
         conversation.state = ConversationState.WAITING_RECEIPT_NAME
         conversation.context = {"pending_sale_id": str(sale.id)}
@@ -633,6 +880,24 @@ def handle_incoming_message(
         body, buttons = _ask_receipt_name(sale)
         _send_buttons(db, adapter, conversation, from_number, body, buttons)
         return {"ok": True, "action": "ask_receipt_name", "sale_code": sale.public_code}
+
+    if button == "view_catalog" or lowered in {
+        "catalog",
+        "catalogue",
+        "catalog link",
+        "lien catalogue",
+        "ma boutique",
+        "my shop",
+    }:
+        _send_catalog(
+            db,
+            adapter,
+            conversation,
+            store,
+            from_number,
+            intro=f"Public catalog for {store.name}.",
+        )
+        return {"ok": True, "action": "catalog_link", "url": shop_catalog_url(store)}
 
     if button == "add_product" or lowered in {"add a product", "ajouter produit", "add product"}:
         conversation.state = ConversationState.ADDING_PRODUCT
@@ -643,7 +908,8 @@ def handle_incoming_message(
             adapter,
             conversation,
             from_number,
-            "Send the product as text, for example: Robe rouge 12000 FCFA, 5 pieces.",
+            "Send product text, a photo with caption, or a voice note then the price in text.\n"
+            "Example: Robe rouge 12000 FCFA, 5 pieces.",
         )
         return {"ok": True, "action": "add_product_prompt"}
 
@@ -655,8 +921,8 @@ def handle_incoming_message(
             from_number,
             "What do you want to do?",
             [
-                {"id": "record_sale_help", "title": "Record a sale"},
                 {"id": "add_product", "title": "Add a product"},
+                {"id": "view_catalog", "title": "Catalog link"},
                 {"id": "list_products", "title": "My products"},
             ],
         )
@@ -668,7 +934,8 @@ def handle_incoming_message(
             adapter,
             conversation,
             from_number,
-            "To record a sale, send: vente BBC 9000\nOr: vente Robe 2 12000",
+            "Pour enregistrer une vente : vente BBC 9000\nOu : vente Robe 2 12000\n"
+            "Puis tapez Recu PDF pour recevoir le document.",
         )
         return {"ok": True, "action": "sale_help"}
 
@@ -687,6 +954,14 @@ def handle_incoming_message(
                 from_number,
                 "Your products:\n" + "\n".join(lines),
             )
+        _send_catalog(
+            db,
+            adapter,
+            conversation,
+            store,
+            from_number,
+            intro="Open the full catalog online.",
+        )
         return {"ok": True, "action": "list_products"}
 
     if content.lower().startswith(("vente ", "vendre ", "sale ", "sell ")):
@@ -718,11 +993,11 @@ def handle_incoming_message(
             adapter,
             conversation,
             from_number,
-            "Welcome to Komero. I can add products, record sales, and send receipts.",
+            "Bienvenue sur Komero. Ajoutez des produits (texte/photo), enregistrez des ventes, et envoyez des recus PDF.",
             [
                 {"id": "add_product", "title": "Add a product"},
+                {"id": "view_catalog", "title": "Catalog link"},
                 {"id": "record_sale_help", "title": "Record a sale"},
-                {"id": "list_products", "title": "My products"},
             ],
         )
         return {"ok": True, "action": "welcome"}
@@ -739,6 +1014,9 @@ def handle_incoming_message(
         adapter,
         conversation,
         from_number,
-        "I did not understand. Try: vente BBC 9000\nOr describe a product with price in FCFA.\nOr send hello for the menu.",
+        "Je n'ai pas compris.\n"
+        "Essayez : vente BBC 9000\n"
+        "Ou envoyez une photo produit avec le prix en legende\n"
+        "Ou envoyez bonjour pour le menu.",
     )
     return {"ok": True, "action": "fallback"}

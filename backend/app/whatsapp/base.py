@@ -23,3 +23,13 @@ class WhatsAppAdapter(ABC):
         caption: str | None = None,
     ) -> dict[str, Any]:
         raise NotImplementedError
+
+    def send_cta_url(
+        self, to: str, body: str, *, button_text: str, url: str
+    ) -> dict[str, Any]:
+        """Optional CTA link button. Defaults to plain text with URL."""
+        return self.send_text(to, f"{body}\n{url}")
+
+    def download_media(self, media_id: str, *, suffix: str = ".bin") -> str:
+        """Download inbound media to local storage. Returns absolute file path."""
+        raise NotImplementedError("Media download not supported by this adapter")

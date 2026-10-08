@@ -18,9 +18,28 @@ def extract_inbound_messages(payload: dict[str, Any]) -> list[dict[str, Any]]:
             for message in value.get("messages") or []:
                 text = ""
                 button_id = None
+                media_id = None
+                media_kind = None
+                mime_type = None
                 message_type = message.get("type")
                 if message_type == "text":
                     text = (message.get("text") or {}).get("body") or ""
+                elif message_type == "image":
+                    image = message.get("image") or {}
+                    media_id = image.get("id")
+                    media_kind = "image"
+                    mime_type = image.get("mime_type") or "image/jpeg"
+                    text = image.get("caption") or ""
+                elif message_type == "audio":
+                    audio = message.get("audio") or {}
+                    media_id = audio.get("id")
+                    media_kind = "audio"
+                    mime_type = audio.get("mime_type") or "audio/ogg"
+                elif message_type == "voice":
+                    voice = message.get("voice") or {}
+                    media_id = voice.get("id")
+                    media_kind = "audio"
+                    mime_type = voice.get("mime_type") or "audio/ogg"
                 elif message_type == "interactive":
                     interactive = message.get("interactive") or {}
                     if interactive.get("type") == "button_reply":
@@ -42,6 +61,9 @@ def extract_inbound_messages(payload: dict[str, Any]) -> list[dict[str, Any]]:
                         "id": message.get("id"),
                         "text": text,
                         "button_id": button_id,
+                        "media_id": media_id,
+                        "media_kind": media_kind,
+                        "mime_type": mime_type,
                         "phone_number_id": phone_number_id,
                         "display_phone_number": display_phone,
                     }
@@ -67,7 +89,6 @@ def process_webhook_payload(
             from_number=str(inbound["from"]),
         )
         if not store:
-            # First contact: create a draft merchant shop for onboarding.
             store = find_or_create_merchant_store(db, str(inbound["from"]))
 
         result = handle_incoming_message(
@@ -78,6 +99,9 @@ def process_webhook_payload(
             text=str(inbound.get("text") or ""),
             button_id=inbound.get("button_id"),
             whatsapp_message_id=inbound.get("id"),
+            media_id=inbound.get("media_id"),
+            media_kind=inbound.get("media_kind"),
+            mime_type=inbound.get("mime_type"),
         )
         results.append(result)
     return {"processed": len(results), "results": results}
