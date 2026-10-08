@@ -94,14 +94,20 @@ COPY: dict[str, dict[str, str]] = {
     "add_product_prompt": {
         "fr": (
             "Ajout de produit.\n"
-            "Envoyez le texte, une photo avec legende, ou une note vocale puis le prix en texte.\n"
-            "Exemple : Robe rouge 12000 FCFA, 5 pieces.\n"
+            "Envoyez une photo avec legende, ou un texte.\n"
+            "Exemples :\n"
+            "• Robe rouge 12000 FCFA, 5 pieces\n"
+            "• 2022 Ford 1,5M\n"
+            "• iPhone 13 180k\n"
             "Envoyez menu pour revenir."
         ),
         "en": (
             "Add a product.\n"
-            "Send text, a photo with caption, or a voice note then the price in text.\n"
-            "Example: Red dress 12000 FCFA, 5 pieces.\n"
+            "Send a photo with caption, or text.\n"
+            "Examples:\n"
+            "• Red dress 12000 FCFA, 5 pieces\n"
+            "• 2022 Ford 1.5M\n"
+            "• iPhone 13 180k\n"
             "Send menu to go back."
         ),
     },
@@ -110,20 +116,24 @@ COPY: dict[str, dict[str, str]] = {
         "en": "I still need: {missing}. {hint}",
     },
     "product_hint_photo": {
-        "fr": "Renvoyez une photo avec legende, ou un texte du type : Robe wax 15000 FCFA, 8 pieces.",
-        "en": "Send a photo with a caption, or text like: Wax dress 15000 FCFA, 8 pieces.",
+        "fr": "Renvoyez une photo avec legende claire, ex: 2022 Ford 1,5M ou Robe wax 15000 FCFA.",
+        "en": "Send a photo with a clear caption, e.g. 2022 Ford 1.5M or Wax dress 15000 FCFA.",
     },
     "product_hint_text": {
-        "fr": "Exemple : Robe wax 15000 FCFA, 8 pieces. Vous pouvez aussi envoyer une photo.",
-        "en": "Example: Wax dress 15000 FCFA, 8 pieces. You can also send a photo.",
+        "fr": "Exemple : Robe wax 15000 FCFA, 8 pieces. Ou : 2022 Ford 1,5M.",
+        "en": "Example: Wax dress 15000 FCFA, 8 pieces. Or: 2022 Ford 1.5M.",
     },
     "product_draft_title": {
         "fr": "Brouillon produit :",
         "en": "Product draft:",
     },
     "product_photo_received": {
-        "fr": "Photo recue.",
-        "en": "Photo received.",
+        "fr": "Photo recue. J'ai lu la legende.",
+        "en": "Photo received. I read the caption.",
+    },
+    "product_draft_low_confidence": {
+        "fr": "Je ne suis pas totalement sur. Verifiez avant de confirmer.",
+        "en": "I am not fully sure. Check before confirming.",
     },
     "label_name": {"fr": "Nom", "en": "Name"},
     "label_price": {"fr": "Prix", "en": "Price"},
