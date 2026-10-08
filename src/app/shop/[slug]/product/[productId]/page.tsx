@@ -4,7 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
-import { apiFetch, formatXaf, Product, Store } from "@/lib/api";
+import { apiFetch, formatXafShort, Product, Store } from "@/lib/api";
 
 export default function PublicProductPage() {
   const params = useParams<{ slug: string; productId: string }>();
@@ -27,7 +27,7 @@ export default function PublicProductPage() {
           setSelectedVariant(`${item.variants[0].name}:${item.variants[0].value}`);
         }
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Product unavailable");
+        setError(err instanceof Error ? err.message : "Article indisponible");
       }
     }
     if (params.slug && params.productId) void load();
@@ -36,15 +36,16 @@ export default function PublicProductPage() {
   const waLink = useMemo(() => {
     if (!store || !product) return "#";
     const lines = [
-      "Hello, I would like to order:",
+      "Bonjour, je voudrais commander :",
       "",
       product.name,
-      selectedVariant ? `Variant: ${selectedVariant}` : null,
-      `Quantity: ${quantity}`,
+      selectedVariant ? `Variante : ${selectedVariant}` : null,
+      `Quantite : ${quantity}`,
+      `Prix : ${formatXafShort(product.price)}`,
       "",
-      `Store: ${store.name}`,
+      `Boutique : ${store.name}`,
     ].filter(Boolean);
-    const number = store.whatsapp_number || "";
+    const number = (store.whatsapp_number || store.phone || "").replace(/[^\d]/g, "");
     const text = encodeURIComponent(lines.join("\n"));
     return number ? `https://wa.me/${number}?text=${text}` : `https://wa.me/?text=${text}`;
   }, [store, product, quantity, selectedVariant]);
@@ -52,7 +53,7 @@ export default function PublicProductPage() {
   if (error) {
     return (
       <main className="mx-auto max-w-3xl px-4 py-20">
-        <h1 className="font-display text-3xl font-bold">Product not found</h1>
+        <h1 className="font-display text-3xl font-bold">Article introuvable</h1>
         <p className="mt-2 text-ink-soft">{error}</p>
       </main>
     );
@@ -61,66 +62,83 @@ export default function PublicProductPage() {
   if (!store || !product) {
     return (
       <main className="flex min-h-screen items-center justify-center text-ink-soft">
-        Loading product…
+        Chargement de l&apos;article…
       </main>
     );
   }
 
   const image = product.images[0]?.image_url || "/images/product-wax.jpg";
+  const accent = store.primary_color || "#0F6B5C";
+  const inStock = product.stock_quantity > 0;
 
   return (
-    <main className="mx-auto grid min-h-screen max-w-5xl gap-8 px-4 py-10 md:grid-cols-2">
-      <div className="relative aspect-square overflow-hidden rounded-2xl bg-mist">
-        <Image src={image} alt={product.name} fill className="object-cover" priority />
-      </div>
-      <div>
-        <Link href={`/shop/${store.slug}`} className="text-sm font-semibold text-leaf">
-          Back to {store.name}
+    <main className="shop-product-page">
+      <div className="shop-product-shell">
+        <Link href={`/shop/${store.slug}`} className="shop-back">
+          ← {store.name}
         </Link>
-        <h1 className="mt-3 font-display text-4xl font-bold text-ink">{product.name}</h1>
-        <p className="mt-3 text-2xl font-semibold text-leaf">{formatXaf(product.price)}</p>
-        <p className="mt-4 leading-relaxed text-ink-soft">
-          {product.description || "No description yet."}
-        </p>
 
-        {product.variants.length > 0 ? (
-          <label className="mt-6 block text-sm font-medium">
-            Variant
-            <select
-              value={selectedVariant}
-              onChange={(e) => setSelectedVariant(e.target.value)}
-              className="mt-1 w-full rounded-xl border border-line px-3 py-3"
-            >
-              {product.variants.map((variant) => (
-                <option
-                  key={variant.id}
-                  value={`${variant.name}:${variant.value}`}
+        <div className="shop-product-grid">
+          <div className="shop-product-media">
+            <Image src={image} alt={product.name} fill className="object-cover" priority />
+          </div>
+
+          <div className="shop-product-copy">
+            <p className="shop-kicker">{store.name}</p>
+            <h1>{product.name}</h1>
+            <p className="shop-product-price" style={{ color: accent }}>
+              {formatXafShort(product.price)}
+            </p>
+            <p className={`shop-stock-line ${inStock ? "ok" : "out"}`}>
+              {inStock
+                ? `${product.stock_quantity} disponible${product.stock_quantity > 1 ? "s" : ""}`
+                : "Epuise pour le moment"}
+            </p>
+            <p className="shop-product-desc">
+              {product.description || "Demandez plus de details sur WhatsApp."}
+            </p>
+
+            {product.variants.length > 0 ? (
+              <label className="shop-field">
+                Variante
+                <select
+                  value={selectedVariant}
+                  onChange={(e) => setSelectedVariant(e.target.value)}
                 >
-                  {variant.name}: {variant.value}
-                </option>
-              ))}
-            </select>
-          </label>
-        ) : null}
+                  {product.variants.map((variant) => (
+                    <option
+                      key={variant.id}
+                      value={`${variant.name}:${variant.value}`}
+                    >
+                      {variant.name}: {variant.value}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : null}
 
-        <label className="mt-4 block text-sm font-medium">
-          Quantity
-          <input
-            type="number"
-            min={1}
-            max={Math.max(product.stock_quantity, 1)}
-            value={quantity}
-            onChange={(e) => setQuantity(Number(e.target.value))}
-            className="mt-1 w-32 rounded-xl border border-line px-3 py-3"
-          />
-        </label>
+            <label className="shop-field">
+              Quantite
+              <input
+                type="number"
+                min={1}
+                max={Math.max(product.stock_quantity, 1)}
+                value={quantity}
+                onChange={(e) => setQuantity(Number(e.target.value))}
+              />
+            </label>
 
-        <a
-          href={waLink}
-          className="mt-8 inline-flex min-h-14 items-center justify-center rounded-xl bg-[#0F6B5C] px-6 text-base font-bold text-white no-underline"
-        >
-          Order on WhatsApp
-        </a>
+            <a
+              href={waLink}
+              className="shop-order-btn"
+              style={{ backgroundColor: accent }}
+              target="_blank"
+              rel="noreferrer"
+            >
+              Commander sur WhatsApp
+            </a>
+          </div>
+        </div>
       </div>
     </main>
   );

@@ -99,6 +99,13 @@ export type Store = {
   status: string;
 };
 
+export type Category = {
+  id: string;
+  store_id: string;
+  name: string;
+  slug: string;
+};
+
 export type Product = {
   id: string;
   store_id: string;
