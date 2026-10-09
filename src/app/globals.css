@@ -383,6 +383,82 @@ body {
   background: rgba(255, 255, 255, 0.88);
   backdrop-filter: blur(12px);
   box-shadow: 0 10px 30px rgba(14, 31, 28, 0.05);
+  transition:
+    padding 180ms ease,
+    gap 180ms ease,
+    box-shadow 180ms ease,
+    border-radius 180ms ease;
+}
+
+.shop-filters.is-sticky-active {
+  box-shadow: 0 12px 28px rgba(14, 31, 28, 0.1);
+}
+
+.shop-filters.is-compact {
+  gap: 0;
+  padding: 0.55rem 0.7rem;
+  border-radius: 1rem;
+}
+
+.shop-filter-top {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.55rem;
+  align-items: center;
+}
+
+.shop-filters.is-sticky-active .shop-filter-top {
+  grid-template-columns: 1fr auto;
+}
+
+.shop-filter-details {
+  display: grid;
+  gap: 0.85rem;
+  overflow: hidden;
+  max-height: 28rem;
+  opacity: 1;
+  transition:
+    max-height 220ms ease,
+    opacity 160ms ease,
+    margin 180ms ease;
+}
+
+.shop-filters.is-compact .shop-filter-details {
+  max-height: 0;
+  opacity: 0;
+  margin: 0;
+  pointer-events: none;
+}
+
+.shop-filter-toggle {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  min-height: 2.4rem;
+  padding: 0.35rem 0.85rem;
+  border: 1px solid var(--line);
+  border-radius: 0.75rem;
+  background: #fff;
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.88rem;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.shop-filter-toggle.has-active {
+  border-color: color-mix(in srgb, var(--shop-accent, var(--leaf)) 55%, var(--line));
+  color: var(--shop-accent, var(--leaf));
+}
+
+.shop-filter-dot {
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 999px;
+  background: var(--shop-accent, var(--leaf));
 }
 
 .shop-search input,
@@ -397,6 +473,17 @@ body {
   color: var(--ink);
   font: inherit;
   padding: 0.7rem 0.95rem;
+  transition:
+    min-height 180ms ease,
+    padding 180ms ease,
+    border-radius 180ms ease;
+}
+
+.shop-filters.is-compact .shop-search input {
+  min-height: 2.4rem;
+  padding: 0.45rem 0.8rem;
+  border-radius: 0.75rem;
+  font-size: 0.95rem;
 }
 
 .shop-search input:focus,
