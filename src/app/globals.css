@@ -269,27 +269,30 @@ body {
 .shop-share-modal {
   position: fixed;
   inset: 0;
-  z-index: 80;
+  z-index: 200;
   display: grid;
   place-items: end center;
+  padding: 0;
 }
 
 .shop-share-backdrop {
   position: absolute;
   inset: 0;
-  background: rgba(14, 31, 28, 0.45);
+  background: rgba(14, 31, 28, 0.62);
 }
 
 .shop-share-panel {
   position: relative;
   z-index: 1;
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto auto;
   width: min(560px, 100%);
-  max-height: min(92vh, 900px);
-  overflow: auto;
-  padding: 1.1rem 1.1rem 1.35rem;
+  max-height: min(94vh, 920px);
+  overflow: hidden;
+  padding: 1rem 1rem 1.15rem;
   border-radius: 1.35rem 1.35rem 0 0;
   background: #fff;
-  box-shadow: 0 -12px 40px rgba(14, 31, 28, 0.18);
+  box-shadow: 0 -12px 40px rgba(14, 31, 28, 0.22);
 }
 
 .shop-share-head {
@@ -311,45 +314,50 @@ body {
 }
 
 .shop-share-help {
-  margin: 0.7rem 0 0;
+  margin: 0.55rem 0 0;
   color: var(--ink-soft);
-  line-height: 1.5;
+  line-height: 1.45;
+  font-size: 0.95rem;
 }
 
 .shop-share-preview {
-  margin-top: 1rem;
+  margin-top: 0.85rem;
   border-radius: 1rem;
-  overflow: hidden;
+  overflow: auto;
   background: var(--mist);
   border: 1px solid var(--line);
-  aspect-ratio: 9 / 16;
-  max-height: 52vh;
+  min-height: 0;
   display: grid;
-  place-items: center;
+  place-items: start center;
 }
 
 .shop-share-preview img {
   width: 100%;
-  height: 100%;
+  height: auto;
+  max-height: none;
   object-fit: contain;
+  object-position: top center;
   background: #e8f2ee;
+  display: block;
 }
 
 .shop-share-error {
-  margin: 0.75rem 0 0;
+  margin: 0.65rem 0 0;
   color: #a11;
   font-size: 0.92rem;
 }
 
 .shop-share-actions {
-  margin-top: 1rem;
+  margin-top: 0.85rem;
   display: grid;
-  gap: 0.55rem;
+  gap: 0.5rem;
+  flex-shrink: 0;
 }
 
 @media (min-width: 720px) {
   .shop-share-modal {
     place-items: center;
+    padding: 1.25rem;
   }
 
   .shop-share-panel {

@@ -144,7 +144,7 @@ export async function buildCatalogStatusCard(options: {
     products.length === 1 ? "1 article disponible" : `${products.length} articles disponibles`;
   ctx.fillText(countLabel, 104, 370);
 
-  // Product grid (up to 4)
+  // Product grid (up to 4), sized for 1 / 2 / 3+ items
   const picks = products.slice(0, 4);
   const loaded = await Promise.all(
     picks.map(async (product) => {
@@ -156,14 +156,28 @@ export async function buildCatalogStatusCard(options: {
 
   const gridTop = 470;
   const gap = 28;
-  const cellW = (WIDTH - 128 - gap) / 2;
-  const cellH = 520;
+  const footerY = HEIGHT - 280;
+  const gridBottom = footerY - 48;
+  const count = Math.max(loaded.length, 1);
+  const columns = count === 1 ? 1 : 2;
+  const rows = Math.ceil(count / columns);
+  const cellW =
+    columns === 1 ? WIDTH - 128 : (WIDTH - 128 - gap * (columns - 1)) / columns;
+  const availableH = gridBottom - gridTop;
+  const rowGap = gap + 70;
+  const cellH = Math.min(
+    columns === 1 ? 820 : 520,
+    Math.floor((availableH - rowGap * (rows - 1) - 70) / rows),
+  );
 
   loaded.forEach(({ product, img }, index) => {
-    const col = index % 2;
-    const row = Math.floor(index / 2);
-    const x = 64 + col * (cellW + gap);
-    const y = gridTop + row * (cellH + gap + 70);
+    const col = index % columns;
+    const row = Math.floor(index / columns);
+    const x =
+      columns === 1
+        ? 64
+        : 64 + col * (cellW + gap);
+    const y = gridTop + row * (cellH + rowGap);
 
     ctx.fillStyle = "#FFFFFF";
     roundRect(ctx, x, y, cellW, cellH + 70, 28);
@@ -192,7 +206,6 @@ export async function buildCatalogStatusCard(options: {
   });
 
   // Footer CTA band
-  const footerY = HEIGHT - 280;
   ctx.fillStyle = accent;
   roundRect(ctx, 64, footerY, WIDTH - 128, 180, 36);
   ctx.fill();
