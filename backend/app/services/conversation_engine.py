@@ -22,10 +22,30 @@ from app.models.product import Product, ProductStatus
 from app.models.store import Store, StoreStatus
 from app.models.whatsapp import WhatsAppConnection
 from app.schemas.product import ProductCreate, ProductImageIn, ProductVariantIn
+from app.models.order import Order, OrderStatus, PaymentStatus
+from app.models.user import User
 from app.services.bot_copy import buttons, normalize_lang, t
 from app.services.catalog import product_page_url, shop_catalog_url
 from app.services.money import format_xaf
-from app.services.onboarding import activate_store_with_name, find_store_by_merchant_phone
+from app.services.onboarding import (
+    activate_store_with_name,
+    find_store_by_merchant_phone,
+    normalize_phone,
+)
+from app.services.orders import (
+    attach_customer_to_order,
+    attach_sale_to_order,
+    cancel_order,
+    create_catalog_order,
+    find_recent_catalog_order,
+    get_order_for_store,
+    mark_order_paid,
+    merchant_notify_number,
+    order_line_label,
+    order_ref,
+    order_sale_id,
+    sale_items_from_order,
+)
 from app.services.products import create_product, delete_product, get_product, list_products
 from app.services.receipts import create_receipt, verification_url
 from app.services.sales import (
@@ -63,6 +83,25 @@ MENU_TRIGGERS = {
     "hi",
 }
 CANCEL_TRIGGERS = {"cancel", "annuler", "non", "no"}
+
+ORDER_MARKER = "KOMERO_ORDER"
+ORDER_FIELD_RE = re.compile(
+    r"^(store|product|qty|quantity|price|variant)\s*:\s*(.+)$",
+    re.I | re.M,
+)
+HUMAN_ORDER_RE = re.compile(
+    r"(?:voudrais\s+commander|interesse\(e\)\s+par|intéressé\(e\)\s+par|"
+    r"interesse\s+par|interested\s+in)",
+    re.I,
+)
+HUMAN_PRICE_RE = re.compile(
+    r"(?:prix|price)\s*:\s*([0-9][0-9\s]*(?:[.,]\d+)?)\s*(?:f|fcfa|xaf)?",
+    re.I,
+)
+HUMAN_QTY_RE = re.compile(
+    r"(?:quantite|quantité|quantity|qty)\s*:\s*(\d+)",
+    re.I,
+)
 
 
 def _normalize_button(value: str) -> str:
@@ -1101,6 +1140,362 @@ def _handle_media_message(
     return {"ok": False, "action": "unsupported_media"}
 
 
+def _parse_catalog_order_text(text: str) -> dict[str, Any] | None:
+    cleaned = text.strip()
+    if not cleaned:
+        return None
+
+    if ORDER_MARKER in cleaned:
+        block = cleaned.split(ORDER_MARKER, 1)[1]
+        fields = {
+            match.group(1).lower(): match.group(2).strip()
+            for match in ORDER_FIELD_RE.finditer(block)
+        }
+        product_raw = fields.get("product") or ""
+        qty_raw = fields.get("qty") or fields.get("quantity") or "1"
+        price_raw = fields.get("price")
+        try:
+            quantity = max(1, int(qty_raw))
+        except ValueError:
+            quantity = 1
+        unit_price = None
+        if price_raw:
+            try:
+                unit_price = Decimal(re.sub(r"[^\d.,]", "", price_raw).replace(",", "."))
+            except (InvalidOperation, ValueError):
+                unit_price = None
+        product_id = None
+        try:
+            product_id = str(uuid.UUID(product_raw))
+        except ValueError:
+            product_id = None
+        return {
+            "product_id": product_id,
+            "product_name": None if product_id else product_raw or None,
+            "quantity": quantity,
+            "unit_price": unit_price,
+            "variant": fields.get("variant"),
+            "store_slug": fields.get("store"),
+            "source": "structured",
+        }
+
+    if not HUMAN_ORDER_RE.search(cleaned):
+        return None
+
+    lines = [line.strip() for line in cleaned.splitlines() if line.strip()]
+    product_name = None
+    for line in lines:
+        low = line.lower()
+        if HUMAN_ORDER_RE.search(line):
+            continue
+        if low.startswith(
+            ("bonjour", "boutique", "variante", "quantite", "quantité", "prix", "price")
+        ):
+            continue
+        if ":" in line and low.split(":", 1)[0] in {
+            "variante",
+            "variant",
+            "quantite",
+            "quantité",
+            "quantity",
+            "prix",
+            "price",
+            "boutique",
+        }:
+            continue
+        product_name = line
+        break
+
+    qty_match = HUMAN_QTY_RE.search(cleaned)
+    price_match = HUMAN_PRICE_RE.search(cleaned)
+    quantity = int(qty_match.group(1)) if qty_match else 1
+    unit_price = None
+    if price_match:
+        try:
+            unit_price = Decimal(
+                re.sub(r"\s+", "", price_match.group(1)).replace(",", ".")
+            )
+        except (InvalidOperation, ValueError):
+            unit_price = None
+
+    if not product_name and unit_price is None:
+        return None
+    return {
+        "product_id": None,
+        "product_name": product_name,
+        "quantity": quantity,
+        "unit_price": unit_price,
+        "variant": None,
+        "store_slug": None,
+        "source": "human",
+    }
+
+
+def _is_merchant_sender(db: Session, store: Store, from_number: str) -> bool:
+    normalized = normalize_phone(from_number)
+    owner = db.get(User, store.owner_id)
+    candidates = {
+        normalize_phone(store.whatsapp_number or ""),
+        normalize_phone(store.phone or ""),
+        normalize_phone(owner.phone if owner and owner.phone else ""),
+    }
+    candidates.discard("")
+    return normalized in candidates
+
+
+def notify_merchant_catalog_order(
+    db: Session,
+    adapter: WhatsAppAdapter,
+    store: Store,
+    order: Order,
+    *,
+    customer_label: str | None = None,
+) -> str | None:
+    to = merchant_notify_number(db, store)
+    if not to:
+        return None
+    conversation = _get_or_create_conversation(db, store, to)
+    lang = _lang(conversation) or "fr"
+    qty = order.items[0].quantity if order.items else 1
+    body = t(
+        "order_incoming",
+        lang,
+        ref=order_ref(order),
+        product=order_line_label(db, order),
+        qty=qty,
+        total=format_xaf(order.total_amount),
+        customer=customer_label or "Catalogue web",
+    )
+    _send_buttons(
+        db,
+        adapter,
+        conversation,
+        to,
+        body,
+        [
+            {
+                "id": f"order_paid:{order.id}",
+                "title": t("btn_order_paid", lang)[:20],
+            },
+            {
+                "id": f"order_receipt:{order.id}",
+                "title": t("btn_order_receipt", lang)[:20],
+            },
+            {
+                "id": f"order_cancel:{order.id}",
+                "title": t("btn_cancel", lang)[:20],
+            },
+        ],
+    )
+    conversation.state = ConversationState.ORDER_DISCUSSION
+    _set_context(conversation, last_order_id=str(order.id), lang=lang)
+    db.commit()
+    return to
+
+
+def _ensure_sale_for_order(
+    db: Session,
+    store: Store,
+    order: Order,
+) -> Any:
+    existing_id = order_sale_id(order)
+    if existing_id:
+        sale = get_sale(db, existing_id)
+        if sale:
+            return sale
+    customer_name = order.customer.name if order.customer else None
+    sale = create_sale(
+        db,
+        store,
+        sale_items_from_order(db, order),
+        customer_name=customer_name,
+        notes=f"order:{order.id} ref:{order_ref(order)}",
+    )
+    attach_sale_to_order(db, order, sale.id)
+    return sale
+
+
+def _handle_order_action(
+    db: Session,
+    adapter: WhatsAppAdapter,
+    store: Store,
+    conversation: Conversation,
+    from_number: str,
+    button: str,
+) -> dict[str, Any]:
+    lang = _lang(conversation) or "fr"
+    kind, _, raw_id = button.partition(":")
+    try:
+        order_id = uuid.UUID(raw_id)
+    except ValueError:
+        _send_text(db, adapter, conversation, from_number, t("order_not_found", lang))
+        return {"ok": False, "action": "order_not_found"}
+
+    order = get_order_for_store(db, store.id, order_id)
+    if not order:
+        _send_text(db, adapter, conversation, from_number, t("order_not_found", lang))
+        return {"ok": False, "action": "order_not_found"}
+
+    if kind == "order_cancel":
+        cancel_order(db, order)
+        conversation.state = ConversationState.GENERAL_ASSISTANCE
+        db.commit()
+        _send_text(
+            db,
+            adapter,
+            conversation,
+            from_number,
+            t("order_cancelled", lang, ref=order_ref(order)),
+        )
+        _send_main_menu(db, adapter, store, conversation, from_number)
+        return {"ok": True, "action": "order_cancelled", "order_id": str(order.id)}
+
+    if kind == "order_paid":
+        if order.payment_status == PaymentStatus.PAID:
+            _send_text(
+                db,
+                adapter,
+                conversation,
+                from_number,
+                t("order_already_paid", lang, ref=order_ref(order)),
+            )
+        else:
+            mark_order_paid(db, order)
+            _send_text(
+                db,
+                adapter,
+                conversation,
+                from_number,
+                t(
+                    "order_paid",
+                    lang,
+                    ref=order_ref(order),
+                    total=format_xaf(order.total_amount),
+                ),
+            )
+        _send_buttons(
+            db,
+            adapter,
+            conversation,
+            from_number,
+            t(
+                "sale_recorded",
+                lang,
+                code=order_ref(order),
+                total=format_xaf(order.total_amount),
+            ),
+            [
+                {
+                    "id": f"order_receipt:{order.id}",
+                    "title": t("btn_order_receipt", lang)[:20],
+                },
+                {"id": "menu_sales", "title": t("btn_sales", lang)[:20]},
+                {"id": "main_menu", "title": t("btn_menu", lang)[:20]},
+            ],
+        )
+        return {"ok": True, "action": "order_paid", "order_id": str(order.id)}
+
+    if kind == "order_receipt":
+        if order.status == OrderStatus.CANCELLED:
+            _send_text(
+                db, adapter, conversation, from_number, t("order_not_found", lang)
+            )
+            return {"ok": False, "action": "order_cancelled"}
+        if order.payment_status != PaymentStatus.PAID:
+            mark_order_paid(db, order)
+        sale = _ensure_sale_for_order(db, store, order)
+        _set_context(
+            conversation,
+            last_order_id=str(order.id),
+            last_sale_id=str(sale.id),
+        )
+        return _begin_receipt(db, adapter, store, conversation, from_number, sale)
+
+    _send_text(db, adapter, conversation, from_number, t("order_not_found", lang))
+    return {"ok": False, "action": "order_not_found"}
+
+
+def _handle_inbound_catalog_order(
+    db: Session,
+    adapter: WhatsAppAdapter,
+    store: Store,
+    conversation: Conversation,
+    from_number: str,
+    parsed: dict[str, Any],
+) -> dict[str, Any]:
+    lang = _lang(conversation) or "fr"
+    product = None
+    if parsed.get("product_id"):
+        try:
+            product = get_product(db, store.id, uuid.UUID(str(parsed["product_id"])))
+        except ValueError:
+            product = None
+    if not product and parsed.get("product_name"):
+        product = match_product_by_name(db, store.id, str(parsed["product_name"]))
+    if not product:
+        _send_text(db, adapter, conversation, from_number, t("fallback", lang))
+        return {"ok": False, "action": "order_product_missing"}
+
+    unit_price = parsed.get("unit_price")
+    if unit_price is None:
+        unit_price = Decimal(str(product.price))
+
+    is_merchant = _is_merchant_sender(db, store, from_number)
+    customer_phone = None if is_merchant else from_number
+    recent = find_recent_catalog_order(db, store.id, product.id)
+    created_new = False
+    if recent and not is_merchant:
+        order = (
+            attach_customer_to_order(db, store, recent, phone=from_number)
+            if customer_phone
+            else recent
+        )
+        notify_to = None
+    else:
+        order = create_catalog_order(
+            db,
+            store,
+            product=product,
+            quantity=int(parsed.get("quantity") or 1),
+            unit_price=unit_price,
+            customer_phone=customer_phone,
+            variant=parsed.get("variant"),
+            notes="source:whatsapp",
+        )
+        created_new = True
+        notify_to = notify_merchant_catalog_order(
+            db,
+            adapter,
+            store,
+            order,
+            customer_label=customer_phone or from_number,
+        )
+
+    if not is_merchant:
+        _send_text(
+            db,
+            adapter,
+            conversation,
+            from_number,
+            t(
+                "order_customer_ack",
+                lang,
+                product=order_line_label(db, order),
+                total=format_xaf(order.total_amount),
+            ),
+        )
+
+    return {
+        "ok": True,
+        "action": "catalog_order_received",
+        "order_id": str(order.id),
+        "order_ref": order_ref(order),
+        "merchant_notified": notify_to,
+        "customer_ack": not is_merchant,
+        "created_new": created_new,
+    }
+
+
 def _begin_receipt(
     db: Session,
     adapter: WhatsAppAdapter,
@@ -1196,6 +1591,23 @@ def handle_incoming_message(
             )
             if lang_result is not None:
                 return lang_result
+
+    catalog_order = _parse_catalog_order_text(content) if content else None
+    if catalog_order:
+        if not _lang(conversation):
+            _set_context(conversation, lang="fr")
+            db.commit()
+        return _handle_inbound_catalog_order(
+            db, adapter, store, conversation, from_number, catalog_order
+        )
+
+    if button.startswith(("order_paid:", "order_receipt:", "order_cancel:")):
+        if not _lang(conversation):
+            _set_context(conversation, lang="fr")
+            db.commit()
+        return _handle_order_action(
+            db, adapter, store, conversation, from_number, button
+        )
 
     lang = _lang(conversation)
     if not lang:

@@ -17,6 +17,7 @@ import {
 } from "@/lib/api";
 import { CatalogShareButton } from "@/components/shop/CatalogShareButton";
 import { ProductMedia } from "@/components/shop/ProductMedia";
+import { startCatalogOrder } from "@/lib/catalogOrder";
 
 type SortKey = "featured" | "price_asc" | "price_desc" | "name";
 type StockFilter = "all" | "in_stock";
@@ -26,14 +27,6 @@ type Props = {
   products: Product[];
   categories: Category[];
 };
-
-function waOrderLink(store: Store, product: Product) {
-  const number = (store.whatsapp_number || store.phone || "").replace(/[^\d]/g, "");
-  const text = encodeURIComponent(
-    `Bonjour, je suis interesse(e) par :\n${product.name}\nPrix : ${formatXafShort(product.price)}\nBoutique : ${store.name}`,
-  );
-  return number ? `https://wa.me/${number}?text=${text}` : `https://wa.me/?text=${text}`;
-}
 
 export function ShopCatalog({ store, products, categories }: Props) {
   const [query, setQuery] = useState("");
@@ -338,14 +331,15 @@ export function ShopCatalog({ store, products, categories }: Props) {
                       </p>
                     </div>
                   </Link>
-                  <a
-                    href={waOrderLink(store, product)}
+                  <button
+                    type="button"
                     className="shop-wa"
-                    target="_blank"
-                    rel="noreferrer"
+                    onClick={() => {
+                      void startCatalogOrder(store, { product });
+                    }}
                   >
                     Commander
-                  </a>
+                  </button>
                 </li>
               );
             })}

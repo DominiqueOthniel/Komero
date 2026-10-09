@@ -1,7 +1,11 @@
+from decimal import Decimal
 from pathlib import Path
+from typing import Any
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse, Response
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
@@ -10,9 +14,21 @@ from app.models.product import Category, Product, ProductStatus
 from app.models.store import Store, StoreStatus
 from app.schemas.product import CategoryOut, ProductOut
 from app.schemas.store import StoreOut
+from app.services.conversation_engine import notify_merchant_catalog_order
 from app.services.media_store import load_media
+from app.services.orders import create_catalog_order, order_ref
+from app.services.products import get_product
+from app.whatsapp.factory import get_whatsapp_adapter
 
 router = APIRouter(prefix="/public", tags=["public"])
+
+
+class PublicOrderCreate(BaseModel):
+    product_id: UUID
+    quantity: int = Field(default=1, ge=1, le=999)
+    variant: str | None = Field(default=None, max_length=80)
+    unit_price: Decimal | None = None
+    customer_phone: str | None = Field(default=None, max_length=40)
 
 MEDIA_ROOT = Path(__file__).resolve().parents[3] / "storage"
 ALLOWED_MEDIA_KINDS = {"products", "inbound", "receipts"}
@@ -89,6 +105,49 @@ def get_public_categories(slug: str, db: Session = Depends(get_db)) -> list[Cate
     return list(
         db.scalars(select(Category).where(Category.store_id == store.id).order_by(Category.name))
     )
+
+
+@router.post("/shops/{slug}/orders")
+def create_public_shop_order(
+    slug: str,
+    payload: PublicOrderCreate,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    store = db.scalar(
+        select(Store).where(Store.slug == slug, Store.status == StoreStatus.ACTIVE)
+    )
+    if not store:
+        raise HTTPException(status_code=404, detail="Shop not found")
+
+    product = get_product(db, store.id, payload.product_id)
+    if not product or product.status != ProductStatus.PUBLISHED:
+        raise HTTPException(status_code=404, detail="Product not found")
+
+    order = create_catalog_order(
+        db,
+        store,
+        product=product,
+        quantity=payload.quantity,
+        unit_price=payload.unit_price,
+        customer_phone=payload.customer_phone,
+        variant=payload.variant,
+        notes="source:catalog_web",
+    )
+    adapter = get_whatsapp_adapter()
+    merchant_to = notify_merchant_catalog_order(
+        db,
+        adapter,
+        store,
+        order,
+        customer_label=payload.customer_phone or "Catalogue web",
+    )
+    return {
+        "order_id": str(order.id),
+        "order_ref": order_ref(order),
+        "payment_status": order.payment_status.value,
+        "total_amount": str(order.total_amount),
+        "merchant_notified": bool(merchant_to),
+    }
 
 
 @router.get("/media/{kind}/{filename}", response_model=None)
