@@ -8,12 +8,19 @@ export default function StorePage() {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [whatsapp, setWhatsapp] = useState("");
+  const [editName, setEditName] = useState("");
+  const [editDescription, setEditDescription] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   async function refresh() {
     const list = await apiFetch<Store[]>("/stores", {}, true);
     setStores(list);
+    const current = list[0];
+    if (current) {
+      setEditName(current.name);
+      setEditDescription(current.description || "");
+    }
   }
 
   useEffect(() => {
@@ -48,6 +55,31 @@ export default function StorePage() {
     }
   }
 
+  async function onRename(event: FormEvent) {
+    event.preventDefault();
+    const store = stores[0];
+    if (!store) return;
+    setError(null);
+    setMessage(null);
+    try {
+      await apiFetch<Store>(
+        `/stores/${store.id}`,
+        {
+          method: "PATCH",
+          body: JSON.stringify({
+            name: editName.trim(),
+            description: editDescription.trim() || null,
+          }),
+        },
+        true,
+      );
+      setMessage("Boutique mise a jour.");
+      await refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Mise a jour impossible");
+    }
+  }
+
   return (
     <div>
       <h1 className="font-display text-3xl font-bold text-ink">Store</h1>
@@ -62,9 +94,42 @@ export default function StorePage() {
             <p className="mt-2 text-sm text-ink-soft">
               WhatsApp: {store.whatsapp_number || "Not set"} · {store.currency} · {store.status}
             </p>
+            <p className="mt-2 text-sm">
+              <a className="font-semibold text-leaf" href={`/shop/${store.slug}`}>
+                Ouvrir le catalogue
+              </a>
+            </p>
           </div>
         ))}
       </div>
+
+      {stores[0] ? (
+        <form onSubmit={onRename} className="mt-10 max-w-lg space-y-4 rounded-2xl border border-line bg-foam p-5">
+          <h2 className="font-display text-xl font-semibold">Modifier la boutique</h2>
+          <label className="block text-sm font-medium">
+            Nom
+            <input
+              required
+              minLength={2}
+              value={editName}
+              onChange={(e) => setEditName(e.target.value)}
+              className="mt-1 w-full rounded-xl border border-line px-3 py-3"
+            />
+          </label>
+          <label className="block text-sm font-medium">
+            Description
+            <textarea
+              value={editDescription}
+              onChange={(e) => setEditDescription(e.target.value)}
+              className="mt-1 w-full rounded-xl border border-line px-3 py-3"
+              rows={3}
+            />
+          </label>
+          <button type="submit" className="rounded-xl bg-leaf px-4 py-3 text-sm font-semibold text-white">
+            Enregistrer
+          </button>
+        </form>
+      ) : null}
 
       <form onSubmit={onCreate} className="mt-10 max-w-lg space-y-4 rounded-2xl border border-line bg-foam p-5">
         <h2 className="font-display text-xl font-semibold">Create store</h2>

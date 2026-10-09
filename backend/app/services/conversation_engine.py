@@ -1,6 +1,5 @@
 import json
 import re
-import shutil
 import uuid
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
@@ -24,7 +23,7 @@ from app.models.store import Store, StoreStatus
 from app.models.whatsapp import WhatsAppConnection
 from app.schemas.product import ProductCreate, ProductImageIn, ProductVariantIn
 from app.services.bot_copy import buttons, normalize_lang, t
-from app.services.catalog import product_page_url, public_media_url, shop_catalog_url
+from app.services.catalog import product_page_url, shop_catalog_url
 from app.services.money import format_xaf
 from app.services.onboarding import activate_store_with_name, find_store_by_merchant_phone
 from app.services.products import create_product, delete_product, get_product, list_products
@@ -35,6 +34,8 @@ from app.services.sales import (
     get_sale_by_code,
     match_product_by_name,
 )
+from app.services.stores import update_store
+from app.schemas.store import StoreUpdate
 from app.whatsapp.base import WhatsAppAdapter
 
 PRODUCT_MEDIA_DIR = Path(__file__).resolve().parents[2] / "storage" / "products"
@@ -363,8 +364,8 @@ def _send_more_menu(
         buttons(
             lang,
             ("view_catalog", "btn_catalog"),
+            ("rename_shop", "btn_rename"),
             ("change_language", "btn_language"),
-            ("help", "btn_help"),
         ),
     )
 
@@ -495,6 +496,8 @@ def _start_product_draft(
 def _persist_product_from_draft(
     db: Session, store: Store, draft: dict[str, Any], image_path: str | None = None
 ) -> Product:
+    from app.services.media_store import save_media_file
+
     variants = [
         ProductVariantIn(
             name=str(item.get("name") or "size"),
@@ -509,21 +512,18 @@ def _persist_product_from_draft(
     source_image = image_path or draft.get("image_path")
     if source_image and Path(source_image).exists():
         PRODUCT_MEDIA_DIR.mkdir(parents=True, exist_ok=True)
-        suffix = Path(source_image).suffix or ".jpg"
-        filename = f"{uuid.uuid4().hex}{suffix}"
-        dest = PRODUCT_MEDIA_DIR / filename
-        shutil.copy2(source_image, dest)
-        images.append(
-            ProductImageIn(
-                image_url=public_media_url("products", filename),
-                position=0,
-            )
+        url, _filename = save_media_file(
+            db, kind="products", source_path=source_image
         )
+        images.append(ProductImageIn(image_url=url, position=0))
+    stock = int(draft["stock"]) if draft.get("stock") is not None else 0
+    if stock < 1 and images:
+        stock = 1
     payload = ProductCreate(
-        name=str(draft["name"]),
+        name=str(draft["name"]).strip()[:200],
         description=draft.get("description"),
         price=Decimal(str(draft["price"])),
-        stock_quantity=int(draft["stock"]) if draft.get("stock") is not None else 0,
+        stock_quantity=stock,
         status=ProductStatus.PUBLISHED,
         variants=variants,
         images=images,
@@ -1303,6 +1303,41 @@ def handle_incoming_message(
         _send_main_menu(db, adapter, store, conversation, from_number)
         return {"ok": True, "action": "help"}
 
+    if (conversation.context or {}).get("awaiting_shop_rename"):
+        if lowered in CANCEL_TRIGGERS or button == "main_menu":
+            _set_context(conversation)
+            db.commit()
+            _send_main_menu(db, adapter, store, conversation, from_number)
+            return {"ok": True, "action": "rename_cancelled"}
+        if content and len(content.strip()) >= 2:
+            store = update_store(db, store, StoreUpdate(name=content.strip()))
+            _set_context(conversation)
+            db.commit()
+            _send_text(
+                db,
+                adapter,
+                conversation,
+                from_number,
+                t("rename_done", lang, name=store.name),
+            )
+            _send_main_menu(db, adapter, store, conversation, from_number)
+            return {"ok": True, "action": "shop_renamed", "store": store.name}
+        _send_text(db, adapter, conversation, from_number, t("rename_prompt", lang))
+        return {"ok": True, "action": "rename_prompt"}
+
+    if button == "rename_shop" or lowered in {
+        "renommer",
+        "rename",
+        "changer nom",
+        "change name",
+        "nom boutique",
+    }:
+        _set_context(conversation, awaiting_shop_rename=True)
+        conversation.state = ConversationState.GENERAL_ASSISTANCE
+        db.commit()
+        _send_text(db, adapter, conversation, from_number, t("rename_prompt", lang))
+        return {"ok": True, "action": "rename_prompt"}
+
     if button == "view_catalog" or lowered in {
         "catalog",
         "catalogue",
@@ -1453,10 +1488,14 @@ def handle_incoming_message(
             }
 
     # Free-form product text only when it looks intentional.
-    if any(
-        token in lowered
-        for token in ("produit", "product", "ajouter", "j'ai", "stock", "fcfa", "xaf")
-    ) and not lowered.startswith(("vente ", "vendre ", "sale ", "sell ")):
+    if (
+        any(
+            token in lowered
+            for token in ("produit", "product", "ajouter", "j'ai", "stock", "fcfa", "xaf")
+        )
+        and not lowered.startswith(("vente ", "vendre ", "sale ", "sell "))
+        and not lowered.startswith(("product draft", "brouillon produit"))
+    ):
         return _start_product_draft(db, adapter, conversation, from_number, content)
 
     _send_text(db, adapter, conversation, from_number, t("fallback", lang))

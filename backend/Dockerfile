@@ -16,7 +16,7 @@ RUN pip install -r requirements.txt
 
 COPY . .
 
-RUN mkdir -p storage/receipts \
+RUN mkdir -p storage/receipts storage/products storage/inbound \
     && chmod +x scripts/start.sh
 
 EXPOSE 8000

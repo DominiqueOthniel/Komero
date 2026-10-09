@@ -11,6 +11,7 @@ export default function ProductsPage() {
   const [stock, setStock] = useState("1");
   const [description, setDescription] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
 
   async function load() {
     const stores = await apiFetch<Store[]>("/stores", {}, true);
@@ -58,6 +59,22 @@ export default function ProductsPage() {
     }
   }
 
+  async function onDelete(product: Product) {
+    if (!store) return;
+    const ok = window.confirm(`Supprimer « ${product.name} » du catalogue ?`);
+    if (!ok) return;
+    setBusyId(product.id);
+    setError(null);
+    try {
+      await apiFetch(`/stores/${store.id}/products/${product.id}`, { method: "DELETE" }, true);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Suppression impossible");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   if (!store) {
     return (
       <div>
@@ -80,6 +97,7 @@ export default function ProductsPage() {
               <th className="px-4 py-3 font-medium">Price</th>
               <th className="px-4 py-3 font-medium">Stock</th>
               <th className="px-4 py-3 font-medium">Status</th>
+              <th className="px-4 py-3 font-medium">Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -89,11 +107,21 @@ export default function ProductsPage() {
                 <td className="px-4 py-3">{formatXaf(product.price)}</td>
                 <td className="px-4 py-3">{product.stock_quantity}</td>
                 <td className="px-4 py-3 capitalize">{product.status}</td>
+                <td className="px-4 py-3">
+                  <button
+                    type="button"
+                    disabled={busyId === product.id}
+                    onClick={() => void onDelete(product)}
+                    className="rounded-lg border border-line px-3 py-1.5 text-xs font-semibold text-red-700"
+                  >
+                    {busyId === product.id ? "…" : "Supprimer"}
+                  </button>
+                </td>
               </tr>
             ))}
             {products.length === 0 ? (
               <tr>
-                <td colSpan={4} className="px-4 py-8 text-ink-soft">
+                <td colSpan={5} className="px-4 py-8 text-ink-soft">
                   No products yet.
                 </td>
               </tr>
