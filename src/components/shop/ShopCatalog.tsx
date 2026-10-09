@@ -42,23 +42,35 @@ export function ShopCatalog({ store, products, categories }: Props) {
   const [sort, setSort] = useState<SortKey>("featured");
   const [scrolledPast, setScrolledPast] = useState(false);
   const [filtersExpanded, setFiltersExpanded] = useState(false);
-  const sentinelRef = useRef<HTMLDivElement | null>(null);
+  const filtersRef = useRef<HTMLElement | null>(null);
   const deferredQuery = useDeferredValue(query.trim().toLowerCase());
 
   useEffect(() => {
-    const sentinel = sentinelRef.current;
-    if (!sentinel || typeof IntersectionObserver === "undefined") return;
+    const filters = filtersRef.current;
+    if (!filters) return;
 
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        const past = !entry.isIntersecting;
-        setScrolledPast(past);
-        if (!past) setFiltersExpanded(false);
-      },
-      { root: null, threshold: 0, rootMargin: "-8px 0px 0px 0px" },
-    );
-    observer.observe(sentinel);
-    return () => observer.disconnect();
+    let ticking = false;
+    const update = () => {
+      ticking = false;
+      const stuck = filters.getBoundingClientRect().top <= 12;
+      const past = window.scrollY > 40 || stuck;
+      setScrolledPast(past);
+      if (!past) setFiltersExpanded(false);
+    };
+
+    const onScroll = () => {
+      if (ticking) return;
+      ticking = true;
+      requestAnimationFrame(update);
+    };
+
+    update();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("resize", onScroll);
+    return () => {
+      window.removeEventListener("scroll", onScroll);
+      window.removeEventListener("resize", onScroll);
+    };
   }, []);
 
   const categoryMap = useMemo(() => {
@@ -135,8 +147,11 @@ export function ShopCatalog({ store, products, categories }: Props) {
       </header>
 
       <div className="shop-shell">
-        <div ref={sentinelRef} className="shop-filter-sentinel" aria-hidden="true" />
-        <section className={filterClassName} aria-label="Filtres catalogue">
+        <section
+          ref={filtersRef}
+          className={filterClassName}
+          aria-label="Filtres catalogue"
+        >
           <div className="shop-filter-top">
             <label className="shop-search">
               <span className="sr-only">Rechercher un article</span>

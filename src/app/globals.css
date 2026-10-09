@@ -370,12 +370,6 @@ body {
   padding: 1.25rem 0 3.5rem;
 }
 
-.shop-filter-sentinel {
-  height: 1px;
-  margin: 0;
-  pointer-events: none;
-}
-
 .shop-filters {
   position: sticky;
   top: 0.5rem;
