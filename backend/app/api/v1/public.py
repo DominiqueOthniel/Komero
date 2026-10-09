@@ -91,10 +91,10 @@ def get_public_categories(slug: str, db: Session = Depends(get_db)) -> list[Cate
     )
 
 
-@router.get("/media/{kind}/{filename}")
+@router.get("/media/{kind}/{filename}", response_model=None)
 def get_public_media(
     kind: str, filename: str, db: Session = Depends(get_db)
-) -> FileResponse | Response:
+):
     if kind not in ALLOWED_MEDIA_KINDS:
         raise HTTPException(status_code=404, detail="Media not found")
     safe_name = Path(filename).name
