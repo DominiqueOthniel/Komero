@@ -4,7 +4,9 @@ import Link from "next/link";
 import {
   startTransition,
   useDeferredValue,
+  useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import {
@@ -38,7 +40,26 @@ export function ShopCatalog({ store, products, categories }: Props) {
   const [categoryId, setCategoryId] = useState<string>("all");
   const [stock, setStock] = useState<StockFilter>("all");
   const [sort, setSort] = useState<SortKey>("featured");
+  const [scrolledPast, setScrolledPast] = useState(false);
+  const [filtersExpanded, setFiltersExpanded] = useState(false);
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
   const deferredQuery = useDeferredValue(query.trim().toLowerCase());
+
+  useEffect(() => {
+    const sentinel = sentinelRef.current;
+    if (!sentinel || typeof IntersectionObserver === "undefined") return;
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        const past = !entry.isIntersecting;
+        setScrolledPast(past);
+        if (!past) setFiltersExpanded(false);
+      },
+      { root: null, threshold: 0, rootMargin: "-8px 0px 0px 0px" },
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, []);
 
   const categoryMap = useMemo(() => {
     const map = new Map<string, string>();
@@ -84,6 +105,15 @@ export function ShopCatalog({ store, products, categories }: Props) {
   const hasUncategorized = products.some((product) => !product.category_id);
   const hasActiveFilters =
     Boolean(deferredQuery) || categoryId !== "all" || stock !== "all" || sort !== "featured";
+  const compact = scrolledPast && !filtersExpanded;
+  const filterClassName = [
+    "shop-filters",
+    "animate-rise-delay-2",
+    compact ? "is-compact" : "",
+    scrolledPast ? "is-sticky-active" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
 
   return (
     <div className="shop-catalog" style={{ ["--shop-accent" as string]: accent }}>
@@ -105,109 +135,127 @@ export function ShopCatalog({ store, products, categories }: Props) {
       </header>
 
       <div className="shop-shell">
-        <section className="shop-filters animate-rise-delay-2" aria-label="Filtres catalogue">
-          <label className="shop-search">
-            <span className="sr-only">Rechercher un article</span>
-            <input
-              type="search"
-              value={query}
-              onChange={(event) => {
-                const value = event.target.value;
-                startTransition(() => setQuery(value));
-              }}
-              placeholder="Rechercher un article…"
-              autoComplete="off"
-            />
-          </label>
-
-          <div className="shop-filter-row">
-            <div className="shop-chips" role="list">
+        <div ref={sentinelRef} className="shop-filter-sentinel" aria-hidden="true" />
+        <section className={filterClassName} aria-label="Filtres catalogue">
+          <div className="shop-filter-top">
+            <label className="shop-search">
+              <span className="sr-only">Rechercher un article</span>
+              <input
+                type="search"
+                value={query}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  startTransition(() => setQuery(value));
+                }}
+                placeholder="Rechercher un article…"
+                autoComplete="off"
+              />
+            </label>
+            {scrolledPast ? (
               <button
                 type="button"
-                role="listitem"
-                className={categoryId === "all" ? "is-active" : undefined}
-                onClick={() => startTransition(() => setCategoryId("all"))}
+                className={`shop-filter-toggle${hasActiveFilters ? " has-active" : ""}`}
+                aria-expanded={!compact}
+                onClick={() => setFiltersExpanded((open) => !open)}
               >
-                Tous
+                {compact ? "Filtres" : "Réduire"}
+                {hasActiveFilters && compact ? (
+                  <span className="shop-filter-dot" aria-hidden="true" />
+                ) : null}
               </button>
-              {categories.map((category) => (
+            ) : null}
+          </div>
+
+          <div className="shop-filter-details">
+            <div className="shop-filter-row">
+              <div className="shop-chips" role="list">
                 <button
-                  key={category.id}
                   type="button"
                   role="listitem"
-                  className={categoryId === category.id ? "is-active" : undefined}
-                  onClick={() => startTransition(() => setCategoryId(category.id))}
+                  className={categoryId === "all" ? "is-active" : undefined}
+                  onClick={() => startTransition(() => setCategoryId("all"))}
                 >
-                  {category.name}
+                  Tous
                 </button>
-              ))}
-              {hasUncategorized ? (
+                {categories.map((category) => (
+                  <button
+                    key={category.id}
+                    type="button"
+                    role="listitem"
+                    className={categoryId === category.id ? "is-active" : undefined}
+                    onClick={() => startTransition(() => setCategoryId(category.id))}
+                  >
+                    {category.name}
+                  </button>
+                ))}
+                {hasUncategorized ? (
+                  <button
+                    type="button"
+                    role="listitem"
+                    className={categoryId === "uncategorized" ? "is-active" : undefined}
+                    onClick={() =>
+                      startTransition(() => setCategoryId("uncategorized"))
+                    }
+                  >
+                    Autres
+                  </button>
+                ) : null}
+              </div>
+
+              <div className="shop-controls">
+                <label>
+                  <span>Disponibilite</span>
+                  <select
+                    value={stock}
+                    onChange={(event) =>
+                      startTransition(() =>
+                        setStock(event.target.value as StockFilter),
+                      )
+                    }
+                  >
+                    <option value="all">Tous</option>
+                    <option value="in_stock">En stock</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Trier</span>
+                  <select
+                    value={sort}
+                    onChange={(event) =>
+                      startTransition(() => setSort(event.target.value as SortKey))
+                    }
+                  >
+                    <option value="featured">Par defaut</option>
+                    <option value="price_asc">Prix croissant</option>
+                    <option value="price_desc">Prix decroissant</option>
+                    <option value="name">Nom A-Z</option>
+                  </select>
+                </label>
+              </div>
+            </div>
+
+            <div className="shop-filter-meta">
+              <p>
+                {filtered.length} resultat{filtered.length === 1 ? "" : "s"}
+                {deferredQuery ? ` pour « ${query.trim()} »` : ""}
+              </p>
+              {hasActiveFilters ? (
                 <button
                   type="button"
-                  role="listitem"
-                  className={categoryId === "uncategorized" ? "is-active" : undefined}
-                  onClick={() =>
-                    startTransition(() => setCategoryId("uncategorized"))
-                  }
+                  className="shop-reset"
+                  onClick={() => {
+                    startTransition(() => {
+                      setQuery("");
+                      setCategoryId("all");
+                      setStock("all");
+                      setSort("featured");
+                    });
+                  }}
                 >
-                  Autres
+                  Reinitialiser
                 </button>
               ) : null}
             </div>
-
-            <div className="shop-controls">
-              <label>
-                <span>Disponibilite</span>
-                <select
-                  value={stock}
-                  onChange={(event) =>
-                    startTransition(() =>
-                      setStock(event.target.value as StockFilter),
-                    )
-                  }
-                >
-                  <option value="all">Tous</option>
-                  <option value="in_stock">En stock</option>
-                </select>
-              </label>
-              <label>
-                <span>Trier</span>
-                <select
-                  value={sort}
-                  onChange={(event) =>
-                    startTransition(() => setSort(event.target.value as SortKey))
-                  }
-                >
-                  <option value="featured">Par defaut</option>
-                  <option value="price_asc">Prix croissant</option>
-                  <option value="price_desc">Prix decroissant</option>
-                  <option value="name">Nom A-Z</option>
-                </select>
-              </label>
-            </div>
-          </div>
-
-          <div className="shop-filter-meta">
-            <p>
-              {filtered.length} resultat{filtered.length === 1 ? "" : "s"}
-              {deferredQuery ? ` pour « ${query.trim()} »` : ""}
-            </p>
-            {hasActiveFilters ? (
-              <button
-                type="button"
-                className="shop-reset"
-                onClick={() => {
-                  startTransition(() => {
-                    setQuery("");
-                    setCategoryId("all");
-                    setStock("all");
-                    setSort("featured");
-                  });
-                }}
-              >
-                Reinitialiser
-              </button>
-            ) : null}
           </div>
         </section>
 
