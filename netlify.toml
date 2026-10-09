@@ -9,8 +9,8 @@
   NETLIFY_NEXT_SKEW_PROTECTION = "true"
   # Durable Railway API (Postgres + FastAPI).
   NEXT_PUBLIC_API_URL = "https://komero-production.up.railway.app/api/v1"
-  NEXT_PUBLIC_WHATSAPP_NUMBER = "15556535563"
-  NEXT_PUBLIC_WHATSAPP_URL = "https://wa.me/15556535563?text=Bonjour%20Komero%2C%20je%20veux%20creer%20ma%20boutique"
+  NEXT_PUBLIC_WHATSAPP_NUMBER = "237653711921"
+  NEXT_PUBLIC_WHATSAPP_URL = "https://wa.me/237653711921?text=Bonjour%20Komero%2C%20je%20veux%20creer%20ma%20boutique"
 
 # Pin the Next.js Runtime so Netlify does not treat the site as a static export of out/
 [[plugins]]

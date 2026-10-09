@@ -1,4 +1,4 @@
-const DEFAULT_WHATSAPP_NUMBER = "15556535563";
+const DEFAULT_WHATSAPP_NUMBER = "237653711921";
 const DEFAULT_WHATSAPP_TEXT =
   "Bonjour Komero, je veux creer ma boutique";
 
