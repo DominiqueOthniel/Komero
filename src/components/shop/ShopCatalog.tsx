@@ -13,6 +13,7 @@ import {
   Product,
   Store,
 } from "@/lib/api";
+import { CatalogShareButton } from "@/components/shop/CatalogShareButton";
 import { ProductMedia } from "@/components/shop/ProductMedia";
 
 type SortKey = "featured" | "price_asc" | "price_desc" | "name";
@@ -97,6 +98,9 @@ export function ShopCatalog({ store, products, categories }: Props) {
           <p className="shop-count animate-rise-delay-2">
             {products.length} article{products.length === 1 ? "" : "s"}
           </p>
+          <div className="shop-share-row animate-rise-delay-3">
+            <CatalogShareButton store={store} products={products} />
+          </div>
         </div>
       </header>
 

@@ -226,6 +226,146 @@ body {
   color: var(--ink-soft);
 }
 
+.shop-share-row {
+  margin-top: 1.15rem;
+}
+
+.shop-share-btn,
+.shop-share-primary,
+.shop-share-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.85rem;
+  border: 0;
+  border-radius: 0.9rem;
+  padding: 0.7rem 1.1rem;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.shop-share-btn,
+.shop-share-primary {
+  background: var(--shop-accent, var(--leaf));
+  color: #fff;
+}
+
+.shop-share-primary.alt {
+  background: var(--ink);
+}
+
+.shop-share-secondary,
+.shop-share-close {
+  background: #fff;
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 0.9rem;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.shop-share-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: end center;
+}
+
+.shop-share-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(14, 31, 28, 0.45);
+}
+
+.shop-share-panel {
+  position: relative;
+  z-index: 1;
+  width: min(560px, 100%);
+  max-height: min(92vh, 900px);
+  overflow: auto;
+  padding: 1.1rem 1.1rem 1.35rem;
+  border-radius: 1.35rem 1.35rem 0 0;
+  background: #fff;
+  box-shadow: 0 -12px 40px rgba(14, 31, 28, 0.18);
+}
+
+.shop-share-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.shop-share-head h2 {
+  margin: 0;
+  font-family: var(--font-display), ui-sans-serif, system-ui, sans-serif;
+  font-size: 1.35rem;
+}
+
+.shop-share-close {
+  min-height: 2.4rem;
+  padding: 0.4rem 0.8rem;
+}
+
+.shop-share-help {
+  margin: 0.7rem 0 0;
+  color: var(--ink-soft);
+  line-height: 1.5;
+}
+
+.shop-share-preview {
+  margin-top: 1rem;
+  border-radius: 1rem;
+  overflow: hidden;
+  background: var(--mist);
+  border: 1px solid var(--line);
+  aspect-ratio: 9 / 16;
+  max-height: 52vh;
+  display: grid;
+  place-items: center;
+}
+
+.shop-share-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: #e8f2ee;
+}
+
+.shop-share-error {
+  margin: 0.75rem 0 0;
+  color: #a11;
+  font-size: 0.92rem;
+}
+
+.shop-share-actions {
+  margin-top: 1rem;
+  display: grid;
+  gap: 0.55rem;
+}
+
+@media (min-width: 720px) {
+  .shop-share-modal {
+    place-items: center;
+  }
+
+  .shop-share-panel {
+    border-radius: 1.35rem;
+    max-height: min(88vh, 860px);
+  }
+
+  .shop-share-actions {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .shop-share-secondary {
+    grid-column: 1 / -1;
+  }
+}
+
 .shop-shell {
   padding: 1.25rem 0 3.5rem;
 }
