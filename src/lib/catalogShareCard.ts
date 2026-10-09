@@ -164,23 +164,28 @@ export async function buildCatalogStatusCard(options: {
   const cellW =
     columns === 1 ? WIDTH - 128 : (WIDTH - 128 - gap * (columns - 1)) / columns;
   const availableH = gridBottom - gridTop;
-  const rowGap = gap + 70;
+  const labelH = 88;
+  const rowPitch = gap + labelH;
   const cellH = Math.min(
-    columns === 1 ? 820 : 520,
-    Math.floor((availableH - rowGap * (rows - 1) - 70) / rows),
+    columns === 1 ? 820 : 500,
+    Math.max(
+      280,
+      Math.floor((availableH - rowPitch * (rows - 1) - labelH) / rows),
+    ),
   );
 
   loaded.forEach(({ product, img }, index) => {
     const col = index % columns;
     const row = Math.floor(index / columns);
-    const x =
-      columns === 1
-        ? 64
-        : 64 + col * (cellW + gap);
-    const y = gridTop + row * (cellH + rowGap);
+    const itemsInRow =
+      row === rows - 1 ? count - row * columns : columns;
+    const rowWidth = itemsInRow * cellW + (itemsInRow - 1) * gap;
+    const rowLeft = 64 + (WIDTH - 128 - rowWidth) / 2;
+    const x = rowLeft + col * (cellW + gap);
+    const y = gridTop + row * (cellH + rowPitch);
 
     ctx.fillStyle = "#FFFFFF";
-    roundRect(ctx, x, y, cellW, cellH + 70, 28);
+    roundRect(ctx, x, y, cellW, cellH + labelH, 28);
     ctx.fill();
 
     if (img) {
@@ -196,13 +201,13 @@ export async function buildCatalogStatusCard(options: {
     }
 
     ctx.fillStyle = "#0E1F1C";
-    ctx.font = "700 34px Manrope, sans-serif";
+    ctx.font = "700 32px Manrope, sans-serif";
     const nameLines = wrapText(ctx, product.name, cellW - 40, 1);
-    ctx.fillText(nameLines[0] || product.name, x + 22, y + cellH + 28);
+    ctx.fillText(nameLines[0] || product.name, x + 22, y + cellH + 34);
 
     ctx.fillStyle = accent;
-    ctx.font = "800 32px Manrope, sans-serif";
-    ctx.fillText(formatXafShort(product.price), x + 22, y + cellH + 62);
+    ctx.font = "800 30px Manrope, sans-serif";
+    ctx.fillText(formatXafShort(product.price), x + 22, y + cellH + 70);
   });
 
   // Footer CTA band

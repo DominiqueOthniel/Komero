@@ -290,7 +290,7 @@ body {
   width: min(560px, 100%);
   max-height: min(94vh, 920px);
   overflow: hidden;
-  padding: 1rem 1rem 1.15rem;
+  padding: 1rem 1rem calc(1.15rem + env(safe-area-inset-bottom, 0px));
   border-radius: 1.35rem 1.35rem 0 0;
   background: #fff;
   box-shadow: 0 -12px 40px rgba(14, 31, 28, 0.22);
@@ -353,6 +353,12 @@ body {
   display: grid;
   gap: 0.5rem;
   flex-shrink: 0;
+}
+
+.shop-share-actions .shop-share-secondary {
+  font-size: 0.95rem;
+  padding-inline: 0.75rem;
+  white-space: nowrap;
 }
 
 @media (min-width: 720px) {

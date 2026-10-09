@@ -179,7 +179,7 @@ export function CatalogShareButton({ store, products }: Props) {
                   className="shop-share-secondary"
                   onClick={shareWhatsAppLink}
                 >
-                  Envoyer le lien WhatsApp
+                  Lien WhatsApp
                 </button>
               </div>
             </div>
