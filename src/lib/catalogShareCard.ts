@@ -60,26 +60,36 @@ function wrapText(
   maxWidth: number,
   maxLines: number,
 ) {
-  const words = text.split(/\s+/);
+  const words = text.split(/\s+/).filter(Boolean);
+  if (words.length === 0) return [];
+
+  const ellipsize = (value: string) => {
+    let last = value;
+    while (ctx.measureText(`${last}…`).width > maxWidth && last.length > 1) {
+      last = last.slice(0, -1);
+    }
+    return `${last}…`;
+  };
+
   const lines: string[] = [];
   let current = "";
-  for (const word of words) {
+  for (let index = 0; index < words.length; index += 1) {
+    const word = words[index];
     const next = current ? `${current} ${word}` : word;
     if (ctx.measureText(next).width > maxWidth && current) {
       lines.push(current);
       current = word;
-      if (lines.length >= maxLines) break;
+      if (lines.length === maxLines) {
+        lines[maxLines - 1] = ellipsize(lines[maxLines - 1]);
+        return lines;
+      }
     } else {
       current = next;
     }
   }
-  if (lines.length < maxLines && current) lines.push(current);
-  if (lines.length === maxLines && words.length > 0) {
-    let last = lines[maxLines - 1];
-    while (ctx.measureText(`${last}…`).width > maxWidth && last.length > 1) {
-      last = last.slice(0, -1);
-    }
-    lines[maxLines - 1] = `${last}…`;
+  if (current) {
+    if (lines.length < maxLines) lines.push(current);
+    else lines[maxLines - 1] = ellipsize(lines[maxLines - 1]);
   }
   return lines;
 }
