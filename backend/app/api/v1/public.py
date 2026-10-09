@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
@@ -10,6 +10,7 @@ from app.models.product import Category, Product, ProductStatus
 from app.models.store import Store, StoreStatus
 from app.schemas.product import CategoryOut, ProductOut
 from app.schemas.store import StoreOut
+from app.services.media_store import load_media
 
 router = APIRouter(prefix="/public", tags=["public"])
 
@@ -91,12 +92,23 @@ def get_public_categories(slug: str, db: Session = Depends(get_db)) -> list[Cate
 
 
 @router.get("/media/{kind}/{filename}")
-def get_public_media(kind: str, filename: str) -> FileResponse:
+def get_public_media(
+    kind: str, filename: str, db: Session = Depends(get_db)
+) -> FileResponse | Response:
     if kind not in ALLOWED_MEDIA_KINDS:
         raise HTTPException(status_code=404, detail="Media not found")
     safe_name = Path(filename).name
     path = (MEDIA_ROOT / kind / safe_name).resolve()
     root = (MEDIA_ROOT / kind).resolve()
-    if not str(path).startswith(str(root)) or not path.exists() or not path.is_file():
+    if str(path).startswith(str(root)) and path.exists() and path.is_file():
+        return FileResponse(path)
+
+    loaded = load_media(db, kind=kind, filename=safe_name)
+    if not loaded:
         raise HTTPException(status_code=404, detail="Media not found")
-    return FileResponse(path)
+    data, content_type = loaded
+    return Response(
+        content=data,
+        media_type=content_type,
+        headers={"Cache-Control": "public, max-age=86400"},
+    )

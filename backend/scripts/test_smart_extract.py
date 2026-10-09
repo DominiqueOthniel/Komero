@@ -52,6 +52,14 @@ def main() -> None:
     assert "price" in year_only["missing_fields"], year_only
     print("Year not price OK")
 
+    labeled = ai.extract_product(
+        "Product draft : 2022 Price: 1500000 F Stock: 1 Name. Ford",
+        language="en",
+    )
+    assert labeled["name"] and "Ford" in labeled["name"], labeled
+    assert labeled["price"] == 1_500_000.0, labeled
+    print("Labeled draft recovery OK:", labeled["name"], labeled["price"])
+
     print("All smart extract checks passed")
 
 

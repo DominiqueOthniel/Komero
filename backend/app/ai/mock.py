@@ -166,6 +166,40 @@ def _guess_defaults(name: str | None, price: float | None, stock: int | None) ->
     return stock
 
 
+def _parse_labeled_draft(cleaned: str) -> dict[str, Any] | None:
+    """Recover structured fields if the merchant resends a bot draft bubble."""
+    lowered = cleaned.lower()
+    if not (
+        "product draft" in lowered
+        or "brouillon produit" in lowered
+        or re.search(r"\b(?:name|nom)\s*:", cleaned, re.I)
+    ):
+        return None
+
+    name_match = re.search(
+        r"(?:name|nom)\s*[:.\-]\s*(.+)$", cleaned, flags=re.IGNORECASE | re.MULTILINE
+    )
+    price_match = re.search(
+        r"(?:price|prix)\s*[:\-]\s*([^\n]+)", cleaned, flags=re.IGNORECASE
+    )
+    stock_match = re.search(
+        r"(?:stock)\s*[:\-]\s*(\d+)", cleaned, flags=re.IGNORECASE
+    )
+    name = name_match.group(1).strip() if name_match else None
+    if name:
+        name = re.split(r"\b(?:price|prix|stock)\b", name, maxsplit=1, flags=re.I)[0]
+        name = " ".join(name.split()).strip(" -:")
+    price = None
+    if price_match:
+        price, _ = _extract_price(price_match.group(1))
+        if price is None:
+            price, _ = _extract_price(cleaned)
+    stock = int(stock_match.group(1)) if stock_match else None
+    if not name and not price:
+        return None
+    return {"name": name or None, "price": price, "stock": stock}
+
+
 class MockAIProvider(AIProvider):
     """Smart deterministic extractor for merchant product messages."""
 
@@ -181,6 +215,23 @@ class MockAIProvider(AIProvider):
                 "variants": [],
                 "missing_fields": ["name", "price"],
                 "confidence": 0.1,
+                "notes": [],
+            }
+
+        labeled = _parse_labeled_draft(cleaned)
+        if labeled and labeled.get("name") and labeled.get("price") is not None:
+            stock = _guess_defaults(
+                labeled.get("name"), labeled.get("price"), labeled.get("stock")
+            )
+            return {
+                "name": labeled["name"],
+                "description": cleaned,
+                "price": labeled["price"],
+                "currency": "XAF",
+                "stock": stock,
+                "variants": [],
+                "missing_fields": [],
+                "confidence": 0.8,
                 "notes": [],
             }
 

@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import {
   startTransition,
@@ -14,6 +13,7 @@ import {
   Product,
   Store,
 } from "@/lib/api";
+import { ProductMedia } from "@/components/shop/ProductMedia";
 
 type SortKey = "featured" | "price_asc" | "price_desc" | "name";
 type StockFilter = "all" | "in_stock";
@@ -247,12 +247,10 @@ export function ShopCatalog({ store, products, categories }: Props) {
                     className="shop-item-link"
                   >
                     <div className="shop-item-media">
-                      <Image
+                      <ProductMedia
                         src={image}
                         alt={product.name}
-                        fill
                         sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
-                        className="object-cover"
                         priority={index < 2}
                       />
                       <span

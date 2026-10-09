@@ -91,6 +91,15 @@ COPY: dict[str, dict[str, str]] = {
         "fr": "Plus d'options.",
         "en": "More options.",
     },
+    "rename_prompt": {
+        "fr": "Quel est le nouveau nom de votre boutique ?",
+        "en": "What is the new name of your shop?",
+    },
+    "rename_done": {
+        "fr": "Boutique renommee : {name}.",
+        "en": "Shop renamed: {name}.",
+    },
+    "btn_rename": {"fr": "Renommer", "en": "Rename"},
     "add_product_prompt": {
         "fr": (
             "Ajout de produit.\n"
@@ -280,7 +289,7 @@ COPY: dict[str, dict[str, str]] = {
             "• menu : menu principal\n"
             "• Produits : ajouter / lister / supprimer\n"
             "• Ventes : vente Nom prix · recu PDF\n"
-            "• Plus : catalogue, langue, aide\n"
+            "• Plus : catalogue, renommer boutique, langue\n"
             "• langue : changer FR / EN"
         ),
         "en": (
@@ -288,7 +297,7 @@ COPY: dict[str, dict[str, str]] = {
             "• menu: main menu\n"
             "• Products: add / list / delete\n"
             "• Sales: sale Name price · PDF receipt\n"
-            "• More: catalog, language, help\n"
+            "• More: catalog, rename shop, language\n"
             "• language: switch FR / EN"
         ),
     },

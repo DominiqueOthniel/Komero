@@ -1,9 +1,9 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
+import { ProductMedia } from "@/components/shop/ProductMedia";
 import { apiFetch, formatXafShort, Product, Store } from "@/lib/api";
 
 export default function PublicProductPage() {
@@ -80,7 +80,12 @@ export default function PublicProductPage() {
 
         <div className="shop-product-grid">
           <div className="shop-product-media">
-            <Image src={image} alt={product.name} fill className="object-cover" priority />
+            <ProductMedia
+              src={image}
+              alt={product.name}
+              sizes="(max-width: 720px) 100vw, 50vw"
+              priority
+            />
           </div>
 
           <div className="shop-product-copy">
