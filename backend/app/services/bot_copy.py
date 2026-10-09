@@ -223,6 +223,50 @@ COPY: dict[str, dict[str, str]] = {
         "fr": "Vente enregistree : {code} · {total}.",
         "en": "Sale recorded: {code} · {total}.",
     },
+    "order_incoming": {
+        "fr": (
+            "Nouvelle commande catalogue {ref}\n"
+            "{product} × {qty}\n"
+            "Total : {total}\n"
+            "Client : {customer}\n"
+            "Validez le paiement, puis faites le recu."
+        ),
+        "en": (
+            "New catalog order {ref}\n"
+            "{product} × {qty}\n"
+            "Total: {total}\n"
+            "Customer: {customer}\n"
+            "Confirm payment, then issue the receipt."
+        ),
+    },
+    "order_customer_ack": {
+        "fr": (
+            "Merci ! Votre commande pour {product} ({total}) est bien recue.\n"
+            "Le marchand va vous confirmer le paiement et le recu."
+        ),
+        "en": (
+            "Thank you! Your order for {product} ({total}) was received.\n"
+            "The merchant will confirm payment and the receipt."
+        ),
+    },
+    "order_paid": {
+        "fr": "Paiement valide pour {ref} · {total}. Vous pouvez faire le recu.",
+        "en": "Payment confirmed for {ref} · {total}. You can issue the receipt.",
+    },
+    "order_cancelled": {
+        "fr": "Commande {ref} annulee.",
+        "en": "Order {ref} cancelled.",
+    },
+    "order_not_found": {
+        "fr": "Commande introuvable.",
+        "en": "Order not found.",
+    },
+    "order_already_paid": {
+        "fr": "Cette commande est deja marquee payee ({ref}).",
+        "en": "This order is already marked paid ({ref}).",
+    },
+    "btn_order_paid": {"fr": "Valider paye", "en": "Mark paid"},
+    "btn_order_receipt": {"fr": "Faire le recu", "en": "Make receipt"},
     "ask_receipt_name": {
         "fr": (
             "Recu pour {code} : {items}, {total}.\n"
@@ -289,6 +333,7 @@ COPY: dict[str, dict[str, str]] = {
             "• menu : menu principal\n"
             "• Produits : ajouter / lister / supprimer\n"
             "• Ventes : vente Nom prix · recu PDF\n"
+            "• Commandes catalogue : Valider paye · Faire le recu\n"
             "• Plus : catalogue, renommer boutique, langue\n"
             "• langue : changer FR / EN"
         ),
@@ -297,6 +342,7 @@ COPY: dict[str, dict[str, str]] = {
             "• menu: main menu\n"
             "• Products: add / list / delete\n"
             "• Sales: sale Name price · PDF receipt\n"
+            "• Catalog orders: Mark paid · Make receipt\n"
             "• More: catalog, rename shop, language\n"
             "• language: switch FR / EN"
         ),

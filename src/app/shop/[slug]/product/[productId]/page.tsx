@@ -2,9 +2,10 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { ProductMedia } from "@/components/shop/ProductMedia";
 import { apiFetch, formatXafShort, Product, Store } from "@/lib/api";
+import { startCatalogOrder } from "@/lib/catalogOrder";
 
 export default function PublicProductPage() {
   const params = useParams<{ slug: string; productId: string }>();
@@ -13,6 +14,7 @@ export default function PublicProductPage() {
   const [quantity, setQuantity] = useState(1);
   const [selectedVariant, setSelectedVariant] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
+  const [ordering, setOrdering] = useState(false);
 
   useEffect(() => {
     async function load() {
@@ -32,23 +34,6 @@ export default function PublicProductPage() {
     }
     if (params.slug && params.productId) void load();
   }, [params.slug, params.productId]);
-
-  const waLink = useMemo(() => {
-    if (!store || !product) return "#";
-    const lines = [
-      "Bonjour, je voudrais commander :",
-      "",
-      product.name,
-      selectedVariant ? `Variante : ${selectedVariant}` : null,
-      `Quantite : ${quantity}`,
-      `Prix : ${formatXafShort(product.price)}`,
-      "",
-      `Boutique : ${store.name}`,
-    ].filter(Boolean);
-    const number = (store.whatsapp_number || store.phone || "").replace(/[^\d]/g, "");
-    const text = encodeURIComponent(lines.join("\n"));
-    return number ? `https://wa.me/${number}?text=${text}` : `https://wa.me/?text=${text}`;
-  }, [store, product, quantity, selectedVariant]);
 
   if (error) {
     return (
@@ -133,15 +118,22 @@ export default function PublicProductPage() {
               />
             </label>
 
-            <a
-              href={waLink}
+            <button
+              type="button"
               className="shop-order-btn"
               style={{ backgroundColor: accent }}
-              target="_blank"
-              rel="noreferrer"
+              disabled={ordering}
+              onClick={() => {
+                setOrdering(true);
+                void startCatalogOrder(store, {
+                  product,
+                  quantity,
+                  variant: selectedVariant || null,
+                }).finally(() => setOrdering(false));
+              }}
             >
-              Commander sur WhatsApp
-            </a>
+              {ordering ? "Ouverture…" : "Commander sur WhatsApp"}
+            </button>
           </div>
         </div>
       </div>
