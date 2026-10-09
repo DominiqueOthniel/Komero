@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   buildCatalogStatusCard,
   catalogShareMessage,
@@ -18,11 +19,25 @@ export function CatalogShareButton({ store, products }: Props) {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [blob, setBlob] = useState<Blob | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [mounted, setMounted] = useState(false);
 
   const catalogUrl =
     typeof window !== "undefined"
       ? `${window.location.origin}/shop/${store.slug}`
       : `https://komero.netlify.app/shop/${store.slug}`;
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previous;
+    };
+  }, [open]);
 
   async function ensureCard() {
     if (blob && previewUrl) return { blob, previewUrl };
@@ -60,6 +75,10 @@ export function CatalogShareButton({ store, products }: Props) {
     } catch {
       // error already set
     }
+  }
+
+  function closeShare() {
+    setOpen(false);
   }
 
   async function downloadImage() {
@@ -105,71 +124,76 @@ export function CatalogShareButton({ store, products }: Props) {
     window.open(`https://wa.me/?text=${text}`, "_blank", "noopener,noreferrer");
   }
 
+  const modal =
+    open && mounted
+      ? createPortal(
+          <div
+            className="shop-share-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Partager le catalogue"
+          >
+            <div className="shop-share-backdrop" onClick={closeShare} />
+            <div className="shop-share-panel">
+              <div className="shop-share-head">
+                <h2>Statut WhatsApp</h2>
+                <button type="button" className="shop-share-close" onClick={closeShare}>
+                  Fermer
+                </button>
+              </div>
+              <p className="shop-share-help">
+                Téléchargez l&apos;image du catalogue, puis ajoutez-la à votre statut WhatsApp.
+                Le lien de la boutique est prêt à partager.
+              </p>
+
+              <div className="shop-share-preview">
+                {previewUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={previewUrl} alt={`Carte statut ${store.name}`} />
+                ) : (
+                  <p>{busy ? "Génération de l'image…" : "Aperçu indisponible"}</p>
+                )}
+              </div>
+
+              {error ? <p className="shop-share-error">{error}</p> : null}
+
+              <div className="shop-share-actions">
+                <button
+                  type="button"
+                  className="shop-share-primary"
+                  disabled={busy}
+                  onClick={() => void downloadImage()}
+                >
+                  Télécharger l&apos;image
+                </button>
+                <button
+                  type="button"
+                  className="shop-share-primary alt"
+                  disabled={busy}
+                  onClick={() => void shareNative()}
+                >
+                  Partager
+                </button>
+                <button
+                  type="button"
+                  className="shop-share-secondary"
+                  onClick={shareWhatsAppLink}
+                >
+                  Envoyer le lien WhatsApp
+                </button>
+              </div>
+            </div>
+          </div>,
+          document.body,
+        )
+      : null;
+
   return (
     <>
       <button type="button" className="shop-share-btn" onClick={() => void openShare()}>
         Partager en statut WhatsApp
       </button>
-
-      {open ? (
-        <div
-          className="shop-share-modal"
-          role="dialog"
-          aria-modal="true"
-          aria-label="Partager le catalogue"
-        >
-          <div className="shop-share-backdrop" onClick={() => setOpen(false)} />
-          <div className="shop-share-panel">
-            <div className="shop-share-head">
-              <h2>Statut WhatsApp</h2>
-              <button type="button" className="shop-share-close" onClick={() => setOpen(false)}>
-                Fermer
-              </button>
-            </div>
-            <p className="shop-share-help">
-              Téléchargez l&apos;image du catalogue, puis ajoutez-la à votre statut WhatsApp.
-              Le lien de la boutique est prêt à partager.
-            </p>
-
-            <div className="shop-share-preview">
-              {previewUrl ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={previewUrl} alt={`Carte statut ${store.name}`} />
-              ) : (
-                <p>{busy ? "Génération de l'image…" : "Aperçu indisponible"}</p>
-              )}
-            </div>
-
-            {error ? <p className="shop-share-error">{error}</p> : null}
-
-            <div className="shop-share-actions">
-              <button
-                type="button"
-                className="shop-share-primary"
-                disabled={busy}
-                onClick={() => void downloadImage()}
-              >
-                Télécharger l&apos;image
-              </button>
-              <button
-                type="button"
-                className="shop-share-primary alt"
-                disabled={busy}
-                onClick={() => void shareNative()}
-              >
-                Partager
-              </button>
-              <button
-                type="button"
-                className="shop-share-secondary"
-                onClick={shareWhatsAppLink}
-              >
-                Envoyer le lien WhatsApp
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
+      {modal}
     </>
   );
 }
