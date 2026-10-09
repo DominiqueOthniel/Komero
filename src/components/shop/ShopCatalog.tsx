@@ -133,7 +133,7 @@ export function ShopCatalog({ store, products, categories }: Props) {
           <p className="shop-count animate-rise-delay-2">
             {products.length} article{products.length === 1 ? "" : "s"}
           </p>
-          <div className="shop-share-row animate-rise-delay-3">
+          <div className="shop-share-row">
             <CatalogShareButton store={store} products={products} />
           </div>
         </div>

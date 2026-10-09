@@ -161,6 +161,7 @@ body {
 }
 
 .shop-catalog {
+  isolation: isolate;
   min-height: 100vh;
   background:
     radial-gradient(900px 420px at 8% -8%, color-mix(in srgb, var(--shop-accent, var(--leaf)) 18%, transparent), transparent 60%),
